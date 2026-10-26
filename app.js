@@ -10,7 +10,7 @@
 const API_PADRAO = 'https://script.google.com/macros/s/AKfycbwp29On9-npjl4QyiiJ_Q9g6tIKjmwTbdtq05uGk4D06_VR12A6xAeZpVHZRnH8UVGN/exec';
 const BOLETIM_URL = 'https://claude.ai/artifact/ToAKhvVxycLAc4N1jP56du';
 const TZ = 'America/Sao_Paulo';
-const VERSAO = '1.0.0';
+const VERSAO = '1.0.1';
 const METAS_PADRAO = {
   meta_mes: 100000,     // faturamento do mês (R$)
   ticket: 200,          // ticket médio alvo (R$)
@@ -695,7 +695,7 @@ async function ativarPush() {
     let sub = await reg.pushManager.getSubscription();
     if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64urlParaBytes(push.vapid) });
     const r = await postar({ acao: 'inscrever', sub: sub.toJSON(), aparelho: navigator.userAgent.slice(0, 120) });
-    if (r && r.ok) { ls.set('belor_push_ok', true); ls.set('belor_push_ep', sub.endpoint); toast(r.teste === 201 ? 'Pronto! Deve chegar uma notificação de teste' : 'Notificações ligadas'); }
+    if (r && r.ok) { ls.set('belor_push_ok', true); ls.set('belor_push_ep', sub.endpoint); toast(typeof r.teste === 'number' && r.teste >= 200 && r.teste < 300 ? 'Pronto! Deve chegar uma notificação de teste' : 'Inscrito, mas o teste não saiu (' + r.teste + ')'); }
     else toast('Não deu pra ligar agora');
   } catch (e) { toast('Erro ao ativar: ' + e.message); }
   S._mesmaTela = true; render();
