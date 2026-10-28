@@ -10,7 +10,7 @@
 const API_PADRAO = 'https://script.google.com/macros/s/AKfycbwp29On9-npjl4QyiiJ_Q9g6tIKjmwTbdtq05uGk4D06_VR12A6xAeZpVHZRnH8UVGN/exec';
 const BOLETIM_URL = 'https://claude.ai/artifact/ToAKhvVxycLAc4N1jP56du';
 const TZ = 'America/Sao_Paulo';
-const VERSAO = '1.0.1';
+const VERSAO = '1.0.2';
 const METAS_PADRAO = {
   meta_mes: 100000,     // faturamento do mês (R$)
   ticket: 200,          // ticket médio alvo (R$)
@@ -38,6 +38,7 @@ const S = {
   tab: qs.get('tab') || ls.get('belor_tab', 'hoje'),
   periodo: ls.get('belor_periodo', 'mes'),
   metasLocais: ls.get('belor_metas', {}),
+  oculto: ls.get('belor_oculto', false),
   loading: false, erro: null, ultimaBusca: 0, abertos: {}
 };
 if (qs.get('pin')) ls.set('belor_pin', qs.get('pin'));
@@ -49,12 +50,16 @@ const num = v => (v === '' || v == null || isNaN(+v)) ? null : +v;
 const nf0 = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 });
 const nf1 = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const nf2 = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const brl = v => v == null ? '—' : 'R$ ' + nf2.format(v);
-const brl0 = v => v == null ? '—' : 'R$ ' + nf0.format(Math.round(v));
-const brlK = v => { if (v == null) return '—'; const a = Math.abs(v); if (a >= 1e6) return 'R$ ' + nf1.format(v / 1e6) + ' mi'; if (a >= 1e4) return 'R$ ' + nf1.format(v / 1e3) + ' mil'; return brl0(v); };
-const pct = (v, d = 0) => v == null ? '—' : (d ? nf1.format(v * 100) : nf0.format(Math.round(v * 100))) + '%';
-const dec1 = v => v == null ? '—' : nf1.format(v);
-const dec2 = v => v == null ? '—' : nf2.format(v);
+const OCULTO = () => !!S.oculto, MASK = '••••';
+const brl = v => v == null ? '—' : 'R$ ' + (OCULTO() ? MASK : nf2.format(v));
+const brl0 = v => v == null ? '—' : 'R$ ' + (OCULTO() ? MASK : nf0.format(Math.round(v)));
+const brlK = v => { if (v == null) return '—'; if (OCULTO()) return 'R$ ' + MASK; const a = Math.abs(v); if (a >= 1e6) return 'R$ ' + nf1.format(v / 1e6) + ' mi'; if (a >= 1e4) return 'R$ ' + nf1.format(v / 1e3) + ' mil'; return brl0(v); };
+const pct = (v, d = 0) => v == null ? '—' : (OCULTO() ? '••' : d ? nf1.format(v * 100) : nf0.format(Math.round(v * 100))) + '%';
+const dec1 = v => v == null ? '—' : OCULTO() ? '••' : nf1.format(v);
+const dec2 = v => v == null ? '—' : OCULTO() ? '••' : nf2.format(v);
+const qtd = v => v == null ? '—' : OCULTO() ? '••' : nf0.format(v);
+// texto livre (boletim, diagnóstico): troca os números por •• sem estragar entidades HTML
+const mascara = t => (t == null || !OCULTO()) ? t : String(t).replace(/&#?\w+;|R\$\s?\d[\d.,]*|\d[\d.,]*/g, m => m[0] === '&' ? m : m.startsWith('R$') ? 'R$ ••' : '••');
 const sum = (a, f) => a.reduce((s, x) => s + (num(f(x)) || 0), 0);
 const MES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
 const DSEM = ['dom','seg','ter','qua','qui','sex','sáb'];
@@ -122,7 +127,7 @@ function metas() {
   if (L.mes === hojeISO().slice(0, 7)) Object.assign(M, L.valores || {}); // ajuste feito aqui e ainda não confirmado pelo servidor
   return M;
 }
-const fato = id => (S.data && S.data.fatos && S.data.fatos[id]) ? `<div class="fato">${S.data.fatos[id]}</div>` : '';
+const fato = id => (S.data && S.data.fatos && S.data.fatos[id]) ? `<div class="fato">${mascara(S.data.fatos[id])}</div>` : '';
 
 async function buscar(pin, silencioso) {
   if (S.loading) return;
@@ -251,12 +256,12 @@ function microdados(c) {
   const A = c.ads;
   L.push({ g: 'Anúncios', id: 'cpf', nome: 'Custo por seguidor (BH)', desc: 'Gasto ÷ seguidores trazidos pelo anúncio', v: A.cpf, meta: M.cpf_max, fmt: brl, dir: 'down', semDados: !A.n, semTxt: 'Chega com o boletim da manhã.',
     dica: `Quando o custo sobe, o vídeo cansou: refaça só os primeiros segundos do criativo campeão e volte com ele.${fato('cpf')}` });
-  L.push({ g: 'Anúncios', id: 'vpr', nome: 'Venda por R$ 1 de anúncio', desc: 'Faturamento da loja ÷ gasto do anúncio BH', v: A.vendaPorReal, meta: M.venda_por_real, fmt: v => v == null ? '—' : 'R$ ' + nf0.format(Math.round(v)), dir: 'up', semDados: !A.n, semTxt: 'Chega com o boletim da manhã.',
+  L.push({ g: 'Anúncios', id: 'vpr', nome: 'Venda por R$ 1 de anúncio', desc: 'Faturamento da loja ÷ gasto do anúncio BH', v: A.vendaPorReal, meta: M.venda_por_real, fmt: brl0, dir: 'up', semDados: !A.n, semTxt: 'Chega com o boletim da manhã.',
     dica: `Concentre a verba nos dias de salário (1 ao 13) e segure do 14 em diante: o mesmo real vende muito mais no começo do mês.${fato('vpr')}` });
   L.push({ g: 'Anúncios', id: 'gasto', nome: 'Gasto por dia (BH)', desc: c.d <= 13 ? 'Janela do salário: hora de acelerar' : 'Fim do mês: hora de segurar', info: true, v: null,
-    txt: A.n ? `<b>${brl(A.porDia)}</b> por dia · ${nf0.format(A.seguidores)} seguidores · ${nf0.format(A.conversas)} conversas` : 'Aguardando os dados dos anúncios',
+    txt: A.n ? `<b>${brl(A.porDia)}</b> por dia · ${qtd(A.seguidores)} seguidores · ${qtd(A.conversas)} conversas` : 'Aguardando os dados dos anúncios',
     dica: `Mais verba do dia 1 ao 13, menos do 14 ao fim. O total do mês fica parecido, mas o dinheiro vai pra quando o cliente tem salário.${fato('gasto')}` });
-  L.push({ g: 'Instagram', id: 'segig', nome: 'Seguidores novos por dia', desc: 'Saldo do Instagram (ganhos − perdidos)', v: c.ig.porDia, meta: M.seg_ig_dia, fmt: v => v == null ? '—' : nf0.format(Math.round(v)), dir: 'up', semDados: !c.ig.n, semTxt: 'Chega com o boletim da manhã.',
+  L.push({ g: 'Instagram', id: 'segig', nome: 'Seguidores novos por dia', desc: 'Saldo do Instagram (ganhos − perdidos)', v: c.ig.porDia, meta: M.seg_ig_dia, fmt: v => v == null ? '—' : qtd(Math.round(v)), dir: 'up', semDados: !c.ig.n, semTxt: 'Chega com o boletim da manhã.',
     dica: `Vídeo com cliente real ("trajado da Belor") e mais de 10s de tempo assistido rende mais que repetir a mesma legenda.${fato('segig')}` });
   L.forEach(x => { x.st = x.info ? 'info' : x.semDados || x.v == null ? 'na' : status(x.v, x.meta, x.dir); x.per = per; });
   return L;
@@ -265,7 +270,7 @@ function microdados(c) {
 /* ---------------- gráficos (SVG à mão, sem bibliotecas) ---------------- */
 let chartSeq = 0;
 function escala(v) { if (!(v > 0)) v = 1; const alvo = v / 5, p = Math.pow(10, Math.floor(Math.log10(alvo))); const step = [1, 2, 2.5, 5, 10].map(x => x * p).find(x => x >= alvo); const n = Math.max(1, Math.ceil(v / step - 1e-9)); return { max: n * step, step, n }; }
-const tkFmt = v => v >= 1000 ? nf1.format(v / 1000).replace(',0', '') + 'k' : nf0.format(v);
+const tkFmt = v => OCULTO() ? '' : v >= 1000 ? nf1.format(v / 1000).replace(',0', '') + 'k' : nf0.format(v);
 
 /* barras por dia: itens {x, v, sub, cls}, opções {meta, zona:[i0,i1,label], h} */
 function barras(itens, o = {}) {
@@ -352,6 +357,8 @@ const IC = {
   micro: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20.5 20.5-4.8-4.8M8.5 11h5M11 8.5v5"/></svg>',
   boletim: '<svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/></svg>',
   ajustes: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+  olho: '<svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  olhoX: '<svg viewBox="0 0 24 24"><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-2.9 3.9M6.6 6.6A17.4 17.4 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18"/></svg>',
   sync: '<svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16m0 4v-4h-4"/></svg>',
   warn: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></svg>',
   ok: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
@@ -378,6 +385,7 @@ function topo() {
   const quando = m != null && m >= 20 * 60 ? new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, day: '2-digit', month: '2-digit' }).format(new Date(String(d.ultimo_envio).split(' ')[0])) + ' ' : '';
   return `<header class="top"><div class="brand">${IC.crown}BELOR</div>
     <div class="sync"><span class="dot ${vivo ? 'live' : m != null && m > 150 ? 'stale' : ''}"></span>${h ? 'Loja ' + quando + 'às ' + h : 'Sem dados'}
+    <button class="iconbtn" id="btnOlho" aria-pressed="${OCULTO()}" aria-label="${OCULTO() ? 'Mostrar valores' : 'Esconder valores'}">${OCULTO() ? IC.olhoX : IC.olho}</button>
     <button class="iconbtn ${S.loading ? 'spin' : ''}" id="btnSync" aria-label="Atualizar">${IC.sync}</button></div></header>`;
 }
 function atualizarBotaoSync() { const b = $('#btnSync'); if (b) b.classList.toggle('spin', !!S.loading); }
@@ -406,29 +414,29 @@ function telaHoje() {
   const comp = (a, b) => { if (a == null || b == null || !b) return ''; const dlt = (a - b) / b; return `<span class="${dlt >= 0 ? 'up' : 'down'}">${dlt >= 0 ? '▲' : '▼'} ${pct(Math.abs(dlt))}</span> vs ${ddmm(ontemISO)}`; };
   let h = alertaLeitor();
   h += `<div class="card hero fade-in"><div class="hero-l">${aberta ? 'Vendido hoje · ' + DSEML[dowOf(hoje)] + ', ' + ddmm(hoje) : 'Loja fechada hoje (' + DSEML[dowOf(hoje)] + ')'}</div>
-    <div class="hero-v num"><small>R$</small>${nf2.format(fat)}</div>
-    <div class="hero-s"><b>${v}</b> ${v === 1 ? 'venda' : 'vendas'}${ticket ? ` · ticket <b>${brl0(ticket)}</b>` : ''}${pa ? ` · PA <b>${dec1(pa)}</b>` : ''}</div>
+    <div class="hero-v num"><small>R$</small>${OCULTO() ? MASK : nf2.format(fat)}</div>
+    <div class="hero-s"><b>${qtd(v)}</b> ${v === 1 ? 'venda' : 'vendas'}${ticket ? ` · ticket <b>${brl0(ticket)}</b>` : ''}${pa ? ` · PA <b>${dec1(pa)}</b>` : ''}</div>
     ${aberta ? `<div class="meter"><div class="meter-row"><span>Meta do dia <b>${brl0(metaDia)}</b></span><span><b>${pct(prog)}</b></span></div>
       <div class="track"><div class="fill ${prog >= 1 ? 'over' : ''}" style="width:${Math.min(100, prog * 100)}%"></div></div>
-      <div class="meter-foot">${prog >= 1 ? `${chip('good')} Meta do dia batida! <b>+${brl0(fat - metaDia)}</b>` : `Faltam <b>${brl0(falta)}</b> pra meta do dia${M.ticket ? ` — umas <b>${Math.ceil(falta / (ticket || M.ticket))}</b> vendas` : ''}`}</div></div>` : ''}
+      <div class="meter-foot">${prog >= 1 ? `${chip('good')} Meta do dia batida! <b>+${brl0(fat - metaDia)}</b>` : `Faltam <b>${brl0(falta)}</b> pra meta do dia${M.ticket ? ` — umas <b>${qtd(Math.ceil(falta / (ticket || M.ticket)))}</b> vendas` : ''}`}</div></div>` : ''}
   </div>`;
   h += `<div class="tiles">
-    <div class="tile"><div class="tile-l">Vendas</div><div class="tile-v num">${v}</div><div class="tile-d">${o ? comp(v, o.vendas) : 'últimos 7 dias'}</div>${spark(ult7v)}</div>
+    <div class="tile"><div class="tile-l">Vendas</div><div class="tile-v num">${qtd(v)}</div><div class="tile-d">${o ? comp(v, o.vendas) : 'últimos 7 dias'}</div>${spark(ult7v)}</div>
     <div class="tile"><div class="tile-l">Ticket médio</div><div class="tile-v num">${ticket ? brl0(ticket) : '—'}</div><div class="tile-d">meta ${brl0(M.ticket)}</div>${spark(ult7t.slice(-7))}</div>
-    <div class="tile"><div class="tile-l">Peças por cliente</div><div class="tile-v num">${pa ? dec1(pa) : '—'}</div><div class="tile-d">meta ${dec1(M.pa)}${r.pecas != null ? ` · ${r.pecas} peças` : ''}</div></div>
-    <div class="tile"><div class="tile-l">Sem cadastro</div><div class="tile-v num">${semcad != null ? semcad : '—'}<small>${semcadPct != null ? ' (' + pct(semcadPct) + ')' : ''}</small></div><div class="tile-d">${semcad ? 'cliente que não volta' : 'meta: 0'}</div></div>
+    <div class="tile"><div class="tile-l">Peças por cliente</div><div class="tile-v num">${pa ? dec1(pa) : '—'}</div><div class="tile-d">meta ${dec1(M.pa)}${r.pecas != null ? ` · ${qtd(r.pecas)} peças` : ''}</div></div>
+    <div class="tile"><div class="tile-l">Sem cadastro</div><div class="tile-v num">${semcad != null ? qtd(semcad) : '—'}<small>${semcadPct != null ? ' (' + pct(semcadPct) + ')' : ''}</small></div><div class="tile-d">${semcad ? 'cliente que não volta' : 'meta: 0'}</div></div>
   </div>`;
   if (totV > 0) h += `<div class="card"><div class="card-h"><div class="card-t">Por vendedor</div><div class="card-a">hoje</div></div><div class="hbars">
     ${vendE.map((e, i) => [esc(e[0]), e[1], corVend[i]]).filter(x => x[1]).map(x => `<div><div class="hb-top"><span><i class="sw" style="background:${x[2]}"></i>${x[0]}</span><span>${brl0(x[1])} <i>· ${pct(x[1] / totV)}</i></span></div><div class="hb-track"><div class="hb-fill" style="width:${x[1] / totV * 100}%;background:${x[2]}"></div></div></div>`).join('')}</div></div>`;
   if (tot > 0) h += `<div class="card"><div class="card-h"><div class="card-t">Formas de pagamento</div><div class="card-a">hoje</div></div><div class="hbars">
     ${[['Pix', r.pix, 'var(--s1)'], ['Dinheiro', r.dinheiro, 'var(--s2)'], ['Crédito', r.credito, 'var(--s3)'], ['Débito', r.debito, 'var(--s4)'], ['Outras', r.outras_formas, 'var(--ghost)']].filter(x => x[1]).map(x => `<div><div class="hb-top"><span><i class="sw" style="background:${x[2]}"></i>${x[0]}</span><span>${brl0(x[1])} <i>· ${pct(x[1] / tot)}</i></span></div><div class="hb-track"><div class="hb-fill" style="width:${x[1] / tot * 100}%;background:${x[2]}"></div></div></div>`).join('')}</div></div>`;
   // últimos 7 dias
-  const it7 = []; for (let i = 6; i >= 0; i--) { const di = addDias(hoje, -i), ri = linhaDe(di); it7.push({ v: ri ? ri.faturamento : 0, tick: DSEM[dowOf(di)], cls: di === hoje ? 'today' : '', t1: `${cap(DSEML[dowOf(di)])}, ${ddmm(di)}`, t2: brl0(ri ? ri.faturamento : 0), t3: ri && ri.vendas ? `${ri.vendas} vendas` : ri && ri.faturamento ? '' : (lojaAbre(di) ? 'sem venda' : 'loja fechada') }); }
+  const it7 = []; for (let i = 6; i >= 0; i--) { const di = addDias(hoje, -i), ri = linhaDe(di); it7.push({ v: ri ? ri.faturamento : 0, tick: DSEM[dowOf(di)], cls: di === hoje ? 'today' : '', t1: `${cap(DSEML[dowOf(di)])}, ${ddmm(di)}`, t2: brl0(ri ? ri.faturamento : 0), t3: ri && ri.vendas ? `${qtd(ri.vendas)} vendas` : ri && ri.faturamento ? '' : (lojaAbre(di) ? 'sem venda' : 'loja fechada') }); }
   h += `<div class="card"><div class="card-h"><div class="card-t">Últimos 7 dias</div><div class="card-a">meta/dia ${brlK(metaDia)}</div></div>${barras(it7, { meta: metaDia, h: 150, aria: 'Faturamento dos últimos 7 dias' })}
     <div class="legend"><span class="k"><i style="background:var(--gold)"></i>Faturamento</span><span class="k"><i class="dash"></i>Meta do dia</span></div></div>`;
   if (o) h += `<div class="card"><div class="card-h"><div class="card-t">Último dia de loja</div><div class="card-a">${cap(DSEML[dowOf(ontemISO)])}, ${ddmm(ontemISO)}</div></div>
     <div class="row"><span>Faturamento</span><span class="num">${brl(o.faturamento)}</span></div>
-    <div class="row"><span>Vendas</span><span class="num">${o.vendas ?? '—'}</span></div>
+    <div class="row"><span>Vendas</span><span class="num">${o.vendas != null ? qtd(o.vendas) : '—'}</span></div>
     <div class="row"><span>Ticket médio</span><span class="num">${o.vendas ? brl0(o.faturamento / o.vendas) : '—'}</span></div>
     ${o.pecas != null && o.detalhe ? `<div class="row"><span>Peças por cliente</span><span class="num">${o.vendas ? dec1(o.pecas / o.vendas) : '—'}</span></div>` : ''}
     <div class="row"><span>x meta do dia</span><span>${chip(status(o.faturamento, metaDia, 'up'))}</span></div></div>`;
@@ -460,7 +468,7 @@ function telaMes() {
   for (let i = 1; i <= n; i++) {
     const iso = isoDe(y, m, i), r = linhaDe(iso), v = r ? r.faturamento : 0;
     if (r && (!melhor || v > melhor.v)) melhor = { v, iso, vendas: r.vendas };
-    itens.push({ v, tick: [1, 5, 10, 15, 20, 25, n].includes(i) ? String(i) : '', cls: iso === hoje ? 'today' : iso > hoje ? 'dim' : '', t1: `${cap(DSEML[dowOf(iso)])}, ${ddmm(iso)}`, t2: brl0(v), t3: r && r.vendas ? `${r.vendas} vendas · ticket ${brl0(v / r.vendas)}` : r && r.faturamento ? '' : lojaAbre(iso) ? (iso > hoje ? 'ainda vai chegar' : 'sem venda') : 'loja fechada' });
+    itens.push({ v, tick: [1, 5, 10, 15, 20, 25, n].includes(i) ? String(i) : '', cls: iso === hoje ? 'today' : iso > hoje ? 'dim' : '', t1: `${cap(DSEML[dowOf(iso)])}, ${ddmm(iso)}`, t2: brl0(v), t3: r && r.vendas ? `${qtd(r.vendas)} vendas · ticket ${brl0(v / r.vendas)}` : r && r.faturamento ? '' : lojaAbre(iso) ? (iso > hoje ? 'ainda vai chegar' : 'sem venda') : 'loja fechada' });
   }
   // dia da semana
   const dsS = [0, 0, 0, 0, 0, 0, 0], dsN = [0, 0, 0, 0, 0, 0, 0];
@@ -468,15 +476,15 @@ function telaMes() {
   const dsIt = [1, 2, 3, 4, 5, 6].map(w => ({ v: dsN[w] ? dsS[w] / dsN[w] : 0, tick: DSEM[w], t1: cap(DSEML[w]), t2: brl0(dsN[w] ? dsS[w] / dsN[w] : 0), t3: `média de ${dsN[w]} ${dsN[w] === 1 ? 'dia' : 'dias'}` }));
   const piorDs = dsIt.reduce((p, x) => x.v && (!p || x.v < p.v) ? x : p, null);
   let h = `<div class="card hero fade-in"><div class="hero-l">${cap(MES[m - 1])} até agora</div>
-    <div class="hero-v num"><small>R$</small>${nf0.format(Math.round(a.fat))}</div>
-    <div class="hero-s">de <b>${brl0(M.meta_mes)}</b> · ${a.vendas} vendas · ticket <b>${brl0(a.ticket)}</b></div>
+    <div class="hero-v num"><small>R$</small>${OCULTO() ? MASK : nf0.format(Math.round(a.fat))}</div>
+    <div class="hero-s">de <b>${brl0(M.meta_mes)}</b> · ${qtd(a.vendas)} vendas · ticket <b>${brl0(a.ticket)}</b></div>
     <div class="meter"><div class="meter-row"><span>Meta do mês</span><span><b>${pct(prog)}</b></span></div>
       <div class="track"><div class="fill ${prog >= 1 ? 'over' : ''}" style="width:${Math.min(100, prog * 100)}%"></div><div class="pace" style="left:${Math.min(100, paceFrac * 100)}%" data-l="hoje devia: ${pct(paceFrac)}"></div></div>
       <div class="meter-foot">${prog >= 1 ? `${chip('good')} Meta do mês batida!` : `Pra bater: <b>${brl0(precisa)}/dia</b> nos ${restantes} dias de loja que faltam${lojaAbre(hoje) ? ' (com hoje)' : ''}`}</div></div></div>`;
   h += `<div class="tiles">
     <div class="tile"><div class="tile-l">Projeção no ritmo</div><div class="tile-v num">${brlK(proj)}</div><div class="tile-d">${ritmo ? brl0(ritmo) + '/dia de média' : '—'}</div></div>
     <div class="tile"><div class="tile-l">Mês passado (até dia ${d})</div><div class="tile-v num">${prevAte != null ? brlK(prevAte) : '—'}</div><div class="tile-d">${prevAte ? `<span class="${a.fat >= prevAte ? 'up' : 'down'}">${a.fat >= prevAte ? '▲' : '▼'} ${pct(Math.abs(a.fat - prevAte) / prevAte)}</span> ${cap(MES[pm - 1]).slice(0, 3)}` : 'sem dado'}</div></div>
-    <div class="tile"><div class="tile-l">Melhor dia</div><div class="tile-v num">${melhor ? brlK(melhor.v) : '—'}</div><div class="tile-d">${melhor ? `${ddmm(melhor.iso)} · ${melhor.vendas} vendas` : ''}</div></div>
+    <div class="tile"><div class="tile-l">Melhor dia</div><div class="tile-v num">${melhor ? brlK(melhor.v) : '—'}</div><div class="tile-d">${melhor ? `${ddmm(melhor.iso)} · ${qtd(melhor.vendas)} vendas` : ''}</div></div>
     <div class="tile"><div class="tile-l">Dias de loja</div><div class="tile-v num">${ate}<small>/${abMes}</small></div><div class="tile-d">${abMes - ate ? `faltam ${abMes - ate}${lojaAbre(hoje) ? ' depois de hoje' : ''}` : 'último dia do mês'}</div></div></div>`;
   h += `<div class="card"><div class="card-h"><div class="card-t">Acumulado do mês</div><div class="card-a">x meta e x mês passado</div></div>
     ${linhas([{ nome: cap(MES[m - 1]), cls: 'cur', pts: cur, area: true }, ...(temPrev ? [{ nome: cap(MES[pm - 1]), cls: 'prev', pts: prev.slice(0, n) }] : []), { nome: 'Meta', cls: 'meta', pts: meta }], n, { aria: 'Faturamento acumulado do mês' })}
@@ -485,7 +493,7 @@ function telaMes() {
     ${barras(itens, { meta: metaDia, zona: [0, 12, 'SALÁRIO (1–13)'], aria: 'Faturamento por dia do mês' })}
     <div class="legend"><span class="k"><i style="background:var(--gold)"></i>Faturamento</span><span class="k"><i class="dash"></i>Meta do dia</span><span class="k"><i style="background:var(--gold-soft);height:9px"></i>Janela do salário</span></div>
     <button class="tablelink" data-act="tabela">Ver em tabela</button>
-    ${S.abertos.tabela ? `<table class="dt"><thead><tr><th>Dia</th><th>Faturamento</th><th>Vendas</th><th>Ticket</th></tr></thead><tbody>${(S.data.vendas || []).filter(r => r.data.startsWith(hoje.slice(0, 7)) && (r.vendas || 0) > 0).map(r => `<tr><td>${ddmm(r.data)} ${DSEM[dowOf(r.data)]}</td><td>${brl0(r.faturamento)}</td><td>${r.vendas}</td><td>${brl0(r.faturamento / r.vendas)}</td></tr>`).join('')}</tbody></table>` : ''}</div>`;
+    ${S.abertos.tabela ? `<table class="dt"><thead><tr><th>Dia</th><th>Faturamento</th><th>Vendas</th><th>Ticket</th></tr></thead><tbody>${(S.data.vendas || []).filter(r => r.data.startsWith(hoje.slice(0, 7)) && (r.vendas || 0) > 0).map(r => `<tr><td>${ddmm(r.data)} ${DSEM[dowOf(r.data)]}</td><td>${brl0(r.faturamento)}</td><td>${qtd(r.vendas)}</td><td>${brl0(r.faturamento / r.vendas)}</td></tr>`).join('')}</tbody></table>` : ''}</div>`;
   h += `<div class="card"><div class="card-h"><div class="card-t">Média por dia da semana</div><div class="card-a">últimas 8 semanas</div></div>${barras(dsIt, { h: 140, aria: 'Média de faturamento por dia da semana' })}
     ${piorDs ? `<div class="meter-foot mt8">Dia mais fraco: <b>${piorDs.t1}</b> (${piorDs.t2}). Bom dia pra oferta no grupo VIP ou live.</div>` : ''}</div>`;
   return h;
@@ -533,9 +541,9 @@ function telaMicro() {
   // diagnóstico (vem do servidor, com o código de acesso)
   const D = S.data && S.data.diagnostico;
   if (!D || !D.travou) return h;
-  h += `<div class="sec">Diagnóstico · por que travou</div><div class="card">${D.travou.map((t, i) => `<div class="diag-i"><div class="diag-n r">${i + 1}</div><div><div class="diag-t">${esc(t[0])}</div><div class="diag-b">${t[1]}</div></div></div>`).join('')}<div class="small muted mt8">Análise da Phibo e dos anúncios de set/out · ${esc(D.data)}</div></div>`;
-  h += `<div class="sec">Plano pra destravar</div><div class="card">${D.plano.map((t, i) => `<div class="diag-i"><div class="diag-n">${i + 1}</div><div><div class="diag-t">${esc(t[0])}</div><div class="diag-b">${t[1]}</div>${t[2] ? `<span class="impact">${esc(t[2])}</span>` : ''}</div></div>`).join('')}
-    <div class="alert good mt12">${IC.ok}<div>${D.fecho} <span class="muted">(estimativa)</span></div></div></div>`;
+  h += `<div class="sec">Diagnóstico · por que travou</div><div class="card">${D.travou.map((t, i) => `<div class="diag-i"><div class="diag-n r">${i + 1}</div><div><div class="diag-t">${esc(t[0])}</div><div class="diag-b">${mascara(t[1])}</div></div></div>`).join('')}<div class="small muted mt8">Análise da Phibo e dos anúncios de set/out · ${esc(D.data)}</div></div>`;
+  h += `<div class="sec">Plano pra destravar</div><div class="card">${D.plano.map((t, i) => `<div class="diag-i"><div class="diag-n">${i + 1}</div><div><div class="diag-t">${esc(t[0])}</div><div class="diag-b">${mascara(t[1])}</div>${t[2] ? `<span class="impact">${esc(mascara(t[2]))}</span>` : ''}</div></div>`).join('')}
+    <div class="alert good mt12">${IC.ok}<div>${mascara(D.fecho)} <span class="muted">(estimativa)</span></div></div></div>`;
   return h;
 }
 
@@ -549,30 +557,30 @@ function telaBoletim() {
   }
   const tomTxt = { bom: 'good', normal: 'info', ruim: 'bad', ok: 'good', alerta: 'warn' };
   h += `<div class="card hero fade-in"><div class="hero-l">Boletim de ${b.data ? cap(DSEML[dowOf(b.data)]) + ', ' + ddmm(b.data) : 'ontem'}</div>
-    <div class="manchete">${esc(b.manchete || '')}</div>
-    ${b.destaque_texto ? `<div class="alert ${b.destaque_tipo === 'atencao' ? 'bad' : 'good'}">${b.destaque_tipo === 'atencao' ? IC.warn : IC.ok}<div>${esc(b.destaque_texto)}</div></div>` : ''}
+    <div class="manchete">${esc(mascara(b.manchete || ''))}</div>
+    ${b.destaque_texto ? `<div class="alert ${b.destaque_tipo === 'atencao' ? 'bad' : 'good'}">${b.destaque_tipo === 'atencao' ? IC.warn : IC.ok}<div>${esc(mascara(b.destaque_texto))}</div></div>` : ''}
     <div class="sec" style="margin:14px 0 4px">Fazer hoje</div>
-    ${[b.fazer_1, b.fazer_2].filter(Boolean).map((t, i) => `<div class="todo"><div class="tn">${i + 1}</div><div>${esc(t)}</div></div>`).join('')}</div>`;
+    ${[b.fazer_1, b.fazer_2].filter(Boolean).map((t, i) => `<div class="todo"><div class="tn">${i + 1}</div><div>${esc(mascara(t))}</div></div>`).join('')}</div>`;
   h += `<div class="card"><div class="card-h"><div class="card-t">Leitura do dia</div></div>
-    ${[['Loja', b.leitura_loja, b.tom_loja], ['Anúncios', b.leitura_pago, b.tom_pago], ['Redes', b.leitura_organico, b.tom_organico]].filter(x => x[1]).map(x => `<div class="reading">${chip(tomTxt[x[2]] || 'info').replace(/>(Bom|Info|Ruim|Atenção)</, '>' + x[0] + '<')}<div class="rt">${esc(x[1])}</div></div>`).join('')}</div>`;
+    ${[['Loja', b.leitura_loja, b.tom_loja], ['Anúncios', b.leitura_pago, b.tom_pago], ['Redes', b.leitura_organico, b.tom_organico]].filter(x => x[1]).map(x => `<div class="reading">${chip(tomTxt[x[2]] || 'info').replace(/>(Bom|Info|Ruim|Atenção)</, '>' + x[0] + '<')}<div class="rt">${esc(mascara(x[1]))}</div></div>`).join('')}</div>`;
   const rowsBH = (b.pago || []).filter(p => /\bBH\b/i.test(String(p.campanha || '')));
   if (rowsBH.length) {
     const rows = rowsBH;
     h += `<div class="card"><div class="card-h"><div class="card-t">Anúncios de ontem</div><div class="card-a">só loja BH</div></div>
       <table class="dt"><thead><tr><th>Campanha</th><th>Gasto</th><th>Seg.</th><th>R$/seg.</th><th>CTR</th></tr></thead><tbody>
-      ${rows.map(p => `<tr><td>${esc(p.campanha)}</td><td>${brl(p.gasto)}</td><td>${p.seguidores ?? '—'}</td><td>${p.custo_seguidor != null ? dec2(p.custo_seguidor) : '—'}</td><td>${p.ctr != null ? dec1(p.ctr) + '%' : '—'}</td></tr>`).join('')}
+      ${rows.map(p => `<tr><td>${esc(p.campanha)}</td><td>${brl(p.gasto)}</td><td>${p.seguidores != null ? qtd(p.seguidores) : '—'}</td><td>${p.custo_seguidor != null ? dec2(p.custo_seguidor) : '—'}</td><td>${p.ctr != null ? dec1(p.ctr) + '%' : '—'}</td></tr>`).join('')}
       </tbody></table></div>`;
   }
   if (b.organico && b.organico.length) {
     h += `<div class="card"><div class="card-h"><div class="card-t">Redes</div><div class="card-a">Metricool</div></div>
-      ${b.organico.map(o => `<div class="row"><span>${esc(o.rede)}</span><span><b class="num">${o.seguidores_total != null ? nf0.format(o.seguidores_total) : '—'}</b> seguidores${o.seguidores_ganhos != null ? ` · <span class="up">+${o.seguidores_ganhos}</span> <span class="down">−${o.seguidores_perdidos || 0}</span> em ${o.dia_seguidores ? ddmm(o.dia_seguidores) : ''}` : ''}</span></div>`).join('')}</div>`;
+      ${b.organico.map(o => `<div class="row"><span>${esc(o.rede)}</span><span><b class="num">${o.seguidores_total != null ? qtd(o.seguidores_total) : '—'}</b> seguidores${o.seguidores_ganhos != null ? ` · <span class="up">+${qtd(o.seguidores_ganhos)}</span> <span class="down">−${qtd(o.seguidores_perdidos || 0)}</span> em ${o.dia_seguidores ? ddmm(o.dia_seguidores) : ''}` : ''}</span></div>`).join('')}</div>`;
   }
   if (b.videos && b.videos.length) {
     h += `<div class="card"><div class="card-h"><div class="card-t">Vídeos de ontem</div></div>
-      ${b.videos.map(v => `<div class="row"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.legenda || v.rede)}</span><span class="num">${nf0.format(v.views || 0)} views${v.tempo_medio_s ? ' · ' + dec1(v.tempo_medio_s) + 's' : ''}</span></div>`).join('')}</div>`;
+      ${b.videos.map(v => `<div class="row"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.legenda || v.rede)}</span><span class="num">${qtd(v.views || 0)} views${v.tempo_medio_s ? ' · ' + dec1(v.tempo_medio_s) + 's' : ''}</span></div>`).join('')}</div>`;
   }
   if (d.boletins && d.boletins.length > 1) {
-    h += `<div class="sec">Boletins anteriores</div><div class="card">${d.boletins.slice(0, 10).map(x => `<div class="hist-i"><div class="hist-d">${ddmm(x.data)}</div><div>${esc(x.manchete || '')}</div></div>`).join('')}</div>`;
+    h += `<div class="sec">Boletins anteriores</div><div class="card">${d.boletins.slice(0, 10).map(x => `<div class="hist-i"><div class="hist-d">${ddmm(x.data)}</div><div>${esc(mascara(x.manchete || ''))}</div></div>`).join('')}</div>`;
   }
   h += `<a class="btn ghost" href="${BOLETIM_URL}" target="_blank" rel="noopener">${IC.ext}Abrir boletim completo</a>`;
   return h;
@@ -598,11 +606,14 @@ function telaAjustes() {
     notif = `<div class="row"><span>Venda nova e boletim do dia</span><span>${ativo ? chip('good').replace('Bom', 'Ligado') : perm === 'denied' ? chip('bad').replace('Ruim', 'Bloqueado') : chip('na').replace('Sem dado', 'Desligado')}</span></div>
       ${perm === 'denied' ? `<div class="hint">Libere em Ajustes do iPhone → Notificações → Belor.</div>` : `<button class="btn mt8" data-act="push">${IC.bell}${ativo ? 'Testar notificação' : 'Ativar notificações'}</button>`}`;
   }
-  return `<div class="card fade-in"><div class="card-h"><div class="card-t">Meta</div></div>
+  const cartaoMeta = OCULTO()
+    ? `<div class="card fade-in"><div class="card-h"><div class="card-t">Meta</div></div><div class="hint">As metas estão escondidas. Toque no <b>olho</b> lá em cima pra ver e editar.</div></div>`
+    : `<div class="card fade-in"><div class="card-h"><div class="card-t">Meta</div></div>
       <div class="field"><label for="fMeta">Meta de faturamento de ${MES[ymd(hojeISO()).m - 1]}</label><input class="input num" id="fMeta" inputmode="numeric" value="${nf0.format(M.meta_mes)}"><div class="hint">Todas as cores do app (verde, amarelo, vermelho) são calculadas a partir dela. Vale pra este mês e os próximos, até você mudar de novo.</div></div>
       <div class="field"><label for="fTicket">Ticket médio alvo (R$)</label><input class="input num" id="fTicket" inputmode="numeric" value="${nf0.format(M.ticket)}"></div>
       <div class="field"><label for="fPa">Peças por atendimento alvo</label><input class="input num" id="fPa" inputmode="decimal" value="${dec1(M.pa)}"></div>
-      <button class="btn" data-act="salvarMetas">Salvar metas</button></div>
+      <button class="btn" data-act="salvarMetas">Salvar metas</button></div>`;
+  return `${cartaoMeta}
     <div class="card"><div class="card-h"><div class="card-t">Notificações</div></div>${notif}</div>
     <div class="card"><div class="card-h"><div class="card-t">Conexão</div></div>
       <div class="row"><span>Último número da loja</span><span>${d && d.ultimo_envio ? horaDe(d.ultimo_envio) + ' (' + durTxt(minutosDesde(d.ultimo_envio)) + ')' : '—'}</span></div>
@@ -646,7 +657,8 @@ function toast(t) { let el = $('.toast'); if (!el) { el = document.createElement
 
 /* ---------------- ações ---------------- */
 document.addEventListener('click', async e => {
-  const t = e.target.closest('[data-tab],[data-per],[data-act],#btnSync'); if (!t) return;
+  const t = e.target.closest('[data-tab],[data-per],[data-act],#btnSync,#btnOlho'); if (!t) return;
+  if (t.id === 'btnOlho') { S.oculto = !S.oculto; ls.set('belor_oculto', S.oculto); S._mesmaTela = true; render(); toast(S.oculto ? 'Valores escondidos' : 'Valores à mostra'); return; }
   if (t.dataset.tab) { S.tab = t.dataset.tab; ls.set('belor_tab', S.tab); window.scrollTo(0, 0); render(); return; }
   if (t.dataset.per) { S.periodo = t.dataset.per; ls.set('belor_periodo', S.periodo); S._mesmaTela = true; render(); return; }
   if (t.id === 'btnSync') { await buscar(S.pin); S._mesmaTela = true; render(); toast(S.erro ? 'Não deu pra atualizar agora' : 'Atualizado'); return; }
