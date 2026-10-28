@@ -10,7 +10,7 @@
 const API_PADRAO = 'https://script.google.com/macros/s/AKfycbwp29On9-npjl4QyiiJ_Q9g6tIKjmwTbdtq05uGk4D06_VR12A6xAeZpVHZRnH8UVGN/exec';
 const BOLETIM_URL = 'https://claude.ai/artifact/ToAKhvVxycLAc4N1jP56du';
 const TZ = 'America/Sao_Paulo';
-const VERSAO = '1.1.0';
+const VERSAO = '1.2.0';
 const METAS_PADRAO = {
   meta_mes: 100000,     // faturamento do mês (R$)
   ticket: 200,          // ticket médio alvo (R$)
@@ -116,6 +116,10 @@ function normalizar(j) {
     boletins: j.boletins || [],
     anuncios: (j.anuncios || []).map(a => ({ data: String(a.data).slice(0, 10), gasto: num(a.gasto), seguidores: num(a.seguidores), visitas: num(a.visitas), conversas: num(a.conversas), cliques: num(a.cliques), impressoes: num(a.impressoes) })),
     instagram: (j.instagram || []).map(a => ({ data: String(a.data).slice(0, 10), saldo: num(a.saldo), alcance: num(a.alcance), total: num(a.total) })),
+    clientes: (j.clientes || []).map(r => {
+      let o = {}; try { o = JSON.parse(r.cad_origens || '{}') || {}; } catch (e) { o = {}; }
+      return { data: String(r.data).slice(0, 10), novos: num(r.cad_novos), origens: o, voltaram: num(r.voltaram_mes), compraram: num(r.compraram_mes), base: num(r.base_total), vendasMes: num(r.vendas_mes), semCadMes: num(r.sem_cad_mes) };
+    }).filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.data)).sort((a, b) => a.data < b.data ? -1 : 1),
     push: j.push || null,
     diagnostico: j.diagnostico || null,
     fatos: (j.textos && j.textos.fatos) || {},
@@ -356,6 +360,7 @@ function ligarTips() {
 const IC = {
   hoje: '<svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>',
   mes: '<svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/></svg>',
+  clientes: '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5M16 4.8a3.5 3.5 0 0 1 0 6.4M18 14.8c1.9.7 3.2 2.4 3.5 5.2"/></svg>',
   micro: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20.5 20.5-4.8-4.8M8.5 11h5M11 8.5v5"/></svg>',
   boletim: '<svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/></svg>',
   ajustes: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
@@ -428,6 +433,8 @@ function telaHoje() {
     <div class="tile"><div class="tile-l">Peças por cliente</div><div class="tile-v num">${pa ? dec1(pa) : '—'}</div><div class="tile-d">meta ${dec1(M.pa)}${r.pecas != null ? ` · ${qtd(r.pecas)} peças` : ''}</div></div>
     <div class="tile"><div class="tile-l">Cadastros</div><div class="tile-v num">${semcad != null && v ? qtd(v - semcad) + '<small> de ' + qtd(v) + '</small>' : '—'}</div><div class="tile-d">${semcadPct != null ? `<span class="${(1 - semcadPct) >= M.cadastro ? 'up' : 'down'}">${pct(1 - semcadPct)}</span> das vendas com cadastro` : 'sem vendas ainda'}</div></div>
   </div>`;
+  const cliHoje = (S.data.clientes || []).find(c => c.data === hoje);
+  if (cliHoje && cliHoje.novos > 0) h += `<div class="card"><div class="card-h"><div class="card-t">Clientes novos hoje</div><div class="card-a">${qtd(cliHoje.novos)} ${cliHoje.novos === 1 ? 'cadastrado' : 'cadastrados'}</div></div>${origemBars(cliHoje.origens) || '<div class="hint">De onde vieram: ainda lendo na Phibo.</div>'}</div>`;
   if (totV > 0) h += `<div class="card"><div class="card-h"><div class="card-t">Por vendedor</div><div class="card-a">hoje</div></div><div class="hbars">
     ${vendE.map((e, i) => [esc(e[0]), e[1], corVend[i]]).filter(x => x[1]).map(x => `<div><div class="hb-top"><span><i class="sw" style="background:${x[2]}"></i>${x[0]}</span><span>${brl0(x[1])} <i>· ${pct(x[1] / totV)}</i></span></div><div class="hb-track"><div class="hb-fill" style="width:${x[1] / totV * 100}%;background:${x[2]}"></div></div></div>`).join('')}</div></div>`;
   if (tot > 0) h += `<div class="card"><div class="card-h"><div class="card-t">Formas de pagamento</div><div class="card-a">hoje</div></div><div class="hbars">
@@ -442,6 +449,66 @@ function telaHoje() {
     <div class="row"><span>Ticket médio</span><span class="num">${o.vendas ? brl0(o.faturamento / o.vendas) : '—'}</span></div>
     ${o.pecas != null && o.detalhe ? `<div class="row"><span>Peças por cliente</span><span class="num">${o.vendas ? dec1(o.pecas / o.vendas) : '—'}</span></div>` : ''}
     <div class="row"><span>x meta do dia</span><span>${chip(status(o.faturamento, metaDia, 'up'))}</span></div></div>`;
+  return h;
+}
+
+/* ---------------- clientes ---------------- */
+function origemBars(o, dica) {
+  const itens = Object.entries(o || {}).filter(e => e[1] > 0).sort((a, b) => b[1] - a[1]), tot = itens.reduce((t, e) => t + e[1], 0);
+  if (!tot) return '';
+  let i = 0; const cor = n => /não informado|já cadastrado|outros/i.test(n) ? 'var(--ghost)' : ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5, var(--gold))'][Math.min(4, i++)];
+  return `<div class="hbars">${itens.map(([n, q]) => { const c = cor(n); return `<div><div class="hb-top"><span><i class="sw" style="background:${c}"></i>${esc(n)}</span><span>${qtd(q)} <i>· ${pct(q / tot)}</i></span></div><div class="hb-track"><div class="hb-fill" style="width:${q / tot * 100}%;background:${c}"></div></div></div>`; }).join('')}</div>`;
+}
+const somaOrigens = rows => { const o = {}; rows.forEach(r => { for (const k in (r.origens || {})) o[k] = (o[k] || 0) + (r.origens[k] || 0); }); return o; };
+
+function telaClientes() {
+  const hoje = hojeISO(), M = metas(), { y, m } = ymd(hoje), ini = isoDe(y, m, 1);
+  const pm = m === 1 ? 12 : m - 1, py = m === 1 ? y - 1 : y, iniAnt = isoDe(py, pm, 1), fimAnt = isoDe(py, pm, diasNoMes(py, pm));
+  const cli = S.data.clientes || [], doMes = cli.filter(r => r.data >= ini && r.data <= hoje), doAnt = cli.filter(r => r.data >= iniAnt && r.data <= fimAnt);
+  const novosMes = sum(doMes, r => r.novos), novosAnt = sum(doAnt, r => r.novos);
+  const snaps = doMes.filter(r => r.voltaram != null), snap = snaps[snaps.length - 1] || null;
+  // vendas com / sem cadastro no mês: o painel do mês da Phibo (exato); se faltar, soma dos dias com detalhe
+  let vM = snap && snap.vendasMes != null ? snap.vendasMes : null, sM = snap && snap.semCadMes != null ? snap.semCadMes : null, base = '';
+  if (vM == null || sM == null) {
+    const det = S.data.vendas.filter(r => r.data >= ini && r.data <= hoje && r.detalhe && r.vendas != null && r.sem_cad_vendas != null);
+    vM = sum(det, r => r.vendas); sM = sum(det, r => r.sem_cad_vendas); base = det.length ? `<div class="hint">Só dos ${det.length} dias com detalhe.</div>` : '';
+  }
+  const com = vM != null && sM != null ? vM - sM : null, pc = vM ? com / vM : null, st = status(pc, M.cadastro, 'up');
+  const falta = vM && pc != null && pc < M.cadastro ? Math.max(0, Math.ceil(M.cadastro * vM - com)) : 0;
+  let h = '';
+  // 1) cadastros no mês
+  h += `<div class="card hero fade-in"><div class="hero-l">Vendas com cadastro · ${MES[m - 1]}</div>
+    <div class="hero-v num">${com != null && vM ? qtd(com) : '—'}<small> de ${vM ? qtd(vM) : '—'} vendas</small></div>
+    <div class="hero-s">${pc != null ? `<b>${pct(pc)}</b> com cadastro ${chip(st)} · meta <b>${pct(M.cadastro)}</b>` : 'Sem dados do mês ainda'}</div>
+    ${pc != null ? `<div class="meter"><div class="track"><div class="fill ${pc >= M.cadastro ? 'over' : ''}" style="width:${Math.min(100, pc / M.cadastro * 100)}%"></div></div>
+      <div class="meter-foot">${falta ? `Faltam <b>${qtd(falta)}</b> ${falta === 1 ? 'cadastro' : 'cadastros'} nas vendas do mês pra chegar na meta` : 'Meta de cadastro batida!'}</div></div>` : ''}${base}
+    <div class="row"><span>Vendas sem cadastro</span><span class="num">${sM != null ? qtd(sM) : '—'}${vM && sM != null ? ' <i style="font-style:normal;color:var(--muted)">(' + pct(sM / vM) + ')</i>' : ''}</span></div>
+    <div class="row"><span>Clientes novos cadastrados</span><span class="num">${doMes.length ? qtd(novosMes) : '—'}${novosAnt ? ' <i style="font-style:normal;color:var(--muted)">(' + MES[pm - 1].slice(0, 3).toLowerCase() + ': ' + qtd(novosAnt) + ')</i>' : ''}</span></div>
+  </div>`;
+  // 2) quem voltou
+  if (snap) {
+    const serie = snaps.map(r => r.voltaram), ant = snaps.length > 1 ? snaps[snaps.length - 2] : null, dif = ant ? snap.voltaram - ant.voltaram : null;
+    const pv = snap.compraram ? snap.voltaram / snap.compraram : null;
+    h += `<div class="card"><div class="card-h"><div class="card-t">Clientes que voltaram a comprar</div><div class="card-a">${MES[m - 1].toLowerCase()}</div></div>
+      <div class="hero-v num" style="font-size:44px">${qtd(snap.voltaram)}<small> ${snap.voltaram === 1 ? 'cliente' : 'clientes'}</small></div>
+      <div class="hero-s">de <b>${qtd(snap.compraram)}</b> que compraram no mês${pv != null ? ` · <b>${pct(pv)}</b>` : ''}${dif ? ` · <span class="${dif > 0 ? 'up' : 'down'}">${dif > 0 ? '▲ +' : '▼ '}${qtd(dif)}</span> desde ${ddmm(ant.data)}` : ''}</div>
+      ${serie.length > 1 ? `<div class="sparkbox">${spark(serie)}</div>` : ''}
+      <div class="hint">Voltou = cliente cadastrado que comprou de novo em outro dia. Base total: ${snap.base != null ? qtd(snap.base) : '—'} clientes cadastrados.</div></div>`;
+  }
+  // 3) de onde vêm
+  const oMes = somaOrigens(doMes), tot = Object.values(oMes).reduce((t, v) => t + v, 0);
+  if (tot) {
+    const top = Object.entries(oMes).sort((a, b) => b[1] - a[1])[0];
+    h += `<div class="card"><div class="card-h"><div class="card-t">De onde vêm os clientes novos</div><div class="card-a">${qtd(tot)} no mês</div></div>${origemBars(oMes)}
+      <div class="hint">É o que o cliente responde em "Como nos conheceu" no cadastro. ${top ? `Mais forte: <b>${esc(top[0])}</b>.` : ''}</div></div>`;
+  }
+  // 4) cadastros por dia
+  const dias = []; for (let i = 13; i >= 0; i--) dias.push(addDias(hoje, -i));
+  if (cli.some(r => dias.includes(r.data) && r.novos)) {
+    const it = dias.map(d => { const r = cli.find(x => x.data === d), q = r ? (r.novos || 0) : 0; return { v: q, tick: String(+d.slice(8)), cls: d === hoje ? 'today' : '', t1: `${cap(DSEML[dowOf(d)])}, ${ddmm(d)}`, t2: `${qtd(q)} ${q === 1 ? 'cadastro novo' : 'cadastros novos'}`, t3: r && r.origens && Object.keys(r.origens).length ? Object.entries(r.origens).map(e => e[0] + ' ' + e[1]).join(' · ') : '' }; });
+    h += `<div class="card"><div class="card-h"><div class="card-t">Cadastros novos por dia</div><div class="card-a">últimos 14 dias</div></div>${barras(it, { h: 140, aria: 'Cadastros novos por dia' })}</div>`;
+  }
+  if (!cli.length) h += `<div class="card"><div class="hint">Os números de clientes aparecem aqui assim que o leitor da loja for atualizado (versão 2.1). Os de cadastro das vendas já vêm da Phibo.</div></div>`;
   return h;
 }
 
@@ -635,7 +702,7 @@ function telaPin(erro) {
 }
 
 /* ---------------- render ---------------- */
-const TABS = [['hoje', 'Hoje'], ['mes', 'Mês'], ['micro', 'Microdados'], ['boletim', 'Boletim'], ['ajustes', 'Ajustes']];
+const TABS = [['hoje', 'Hoje'], ['mes', 'Mês'], ['clientes', 'Clientes'], ['micro', 'Microdados'], ['boletim', 'Boletim'], ['ajustes', 'Ajustes']];
 function render() {
   const app = $('#app');
   if (!S.pin) { app.innerHTML = telaPin(); return; }
@@ -644,8 +711,8 @@ function render() {
     return;
   }
   chartSeq = 0; for (const k in TIPS) delete TIPS[k];
-  const corpo = { hoje: telaHoje, mes: telaMes, micro: telaMicro, boletim: telaBoletim, ajustes: telaAjustes }[S.tab] || telaHoje;
-  const titulos = { hoje: ['Hoje', ''], mes: ['Mês', ''], micro: ['Microdados', 'Cada número da loja com a meta dele'], boletim: ['Boletim', ''], ajustes: ['Ajustes', ''] };
+  const corpo = { hoje: telaHoje, mes: telaMes, clientes: telaClientes, micro: telaMicro, boletim: telaBoletim, ajustes: telaAjustes }[S.tab] || telaHoje;
+  const titulos = { hoje: ['Hoje', ''], mes: ['Mês', ''], clientes: ['Clientes', 'Cadastro, retorno e de onde eles vêm'], micro: ['Microdados', 'Cada número da loja com a meta dele'], boletim: ['Boletim', ''], ajustes: ['Ajustes', ''] };
   const nRuins = (() => { try { return microdados(contexto('mes')).filter(x => x.st === 'bad').length; } catch (e) { return 0; } })();
   const y0 = window.scrollY;
   app.innerHTML = `<div class="shell">${topo()}
