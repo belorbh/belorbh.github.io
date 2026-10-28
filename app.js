@@ -10,7 +10,7 @@
 const API_PADRAO = 'https://script.google.com/macros/s/AKfycbwp29On9-npjl4QyiiJ_Q9g6tIKjmwTbdtq05uGk4D06_VR12A6xAeZpVHZRnH8UVGN/exec';
 const BOLETIM_URL = 'https://claude.ai/artifact/ToAKhvVxycLAc4N1jP56du';
 const TZ = 'America/Sao_Paulo';
-const VERSAO = '1.0.2';
+const VERSAO = '1.1.0';
 const METAS_PADRAO = {
   meta_mes: 100000,     // faturamento do mês (R$)
   ticket: 200,          // ticket médio alvo (R$)
@@ -39,6 +39,7 @@ const S = {
   periodo: ls.get('belor_periodo', 'mes'),
   metasLocais: ls.get('belor_metas', {}),
   oculto: ls.get('belor_oculto', false),
+  somOn: ls.get('belor_som', true),
   loading: false, erro: null, ultimaBusca: 0, abertos: {}
 };
 if (qs.get('pin')) ls.set('belor_pin', qs.get('pin'));
@@ -141,6 +142,7 @@ async function buscar(pin, silencioso) {
     if (!j.ok) throw new Error(j.erro === 'chave' ? 'chave' : (j.erro || 'erro'));
     S.data = normalizar(j); S.erro = null; S.ultimaBusca = Date.now();
     ls.set('belor_cache', S.data);
+    checarVendaNova();
     return true;
   } catch (e) {
     S.erro = e.message === 'chave' ? 'chave' : 'rede';
@@ -424,7 +426,7 @@ function telaHoje() {
     <div class="tile"><div class="tile-l">Vendas</div><div class="tile-v num">${qtd(v)}</div><div class="tile-d">${o ? comp(v, o.vendas) : 'últimos 7 dias'}</div>${spark(ult7v)}</div>
     <div class="tile"><div class="tile-l">Ticket médio</div><div class="tile-v num">${ticket ? brl0(ticket) : '—'}</div><div class="tile-d">meta ${brl0(M.ticket)}</div>${spark(ult7t.slice(-7))}</div>
     <div class="tile"><div class="tile-l">Peças por cliente</div><div class="tile-v num">${pa ? dec1(pa) : '—'}</div><div class="tile-d">meta ${dec1(M.pa)}${r.pecas != null ? ` · ${qtd(r.pecas)} peças` : ''}</div></div>
-    <div class="tile"><div class="tile-l">Sem cadastro</div><div class="tile-v num">${semcad != null ? qtd(semcad) : '—'}<small>${semcadPct != null ? ' (' + pct(semcadPct) + ')' : ''}</small></div><div class="tile-d">${semcad ? 'cliente que não volta' : 'meta: 0'}</div></div>
+    <div class="tile"><div class="tile-l">Cadastros</div><div class="tile-v num">${semcad != null && v ? qtd(v - semcad) + '<small> de ' + qtd(v) + '</small>' : '—'}</div><div class="tile-d">${semcadPct != null ? `<span class="${(1 - semcadPct) >= M.cadastro ? 'up' : 'down'}">${pct(1 - semcadPct)}</span> das vendas com cadastro` : 'sem vendas ainda'}</div></div>
   </div>`;
   if (totV > 0) h += `<div class="card"><div class="card-h"><div class="card-t">Por vendedor</div><div class="card-a">hoje</div></div><div class="hbars">
     ${vendE.map((e, i) => [esc(e[0]), e[1], corVend[i]]).filter(x => x[1]).map(x => `<div><div class="hb-top"><span><i class="sw" style="background:${x[2]}"></i>${x[0]}</span><span>${brl0(x[1])} <i>· ${pct(x[1] / totV)}</i></span></div><div class="hb-track"><div class="hb-fill" style="width:${x[1] / totV * 100}%;background:${x[2]}"></div></div></div>`).join('')}</div></div>`;
@@ -614,7 +616,10 @@ function telaAjustes() {
       <div class="field"><label for="fPa">Peças por atendimento alvo</label><input class="input num" id="fPa" inputmode="decimal" value="${dec1(M.pa)}"></div>
       <button class="btn" data-act="salvarMetas">Salvar metas</button></div>`;
   return `${cartaoMeta}
-    <div class="card"><div class="card-h"><div class="card-t">Notificações</div></div>${notif}</div>
+    <div class="card"><div class="card-h"><div class="card-t">Notificações</div></div>${notif}
+      <div class="row mt12"><span>Som de venda (app aberto)</span><span>${S.somOn ? chip('good').replace('Bom', 'Ligado') : chip('na').replace('Sem dado', 'Desligado')}</span></div>
+      <div class="btns"><button class="btn ghost mt8" data-act="somTestar">Testar som</button><button class="btn ghost mt8" data-act="somToggle">${S.somOn ? 'Desligar' : 'Ligar'} som</button></div>
+      <div class="hint">Toca o "cha-ching" quando o app está aberto e entra uma venda. Com o app fechado, o iPhone usa o som padrão da notificação (o iOS não deixa trocar).</div></div>
     <div class="card"><div class="card-h"><div class="card-t">Conexão</div></div>
       <div class="row"><span>Último número da loja</span><span>${d && d.ultimo_envio ? horaDe(d.ultimo_envio) + ' (' + durTxt(minutosDesde(d.ultimo_envio)) + ')' : '—'}</span></div>
       <div class="row"><span>Dias na planilha</span><span>${d ? d.vendas.length : 0}</span></div>
@@ -655,6 +660,40 @@ function render() {
 
 function toast(t) { let el = $('.toast'); if (!el) { el = document.createElement('div'); el.className = 'toast'; document.body.appendChild(el); } el.textContent = t; el.classList.add('on'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('on'), 2600); }
 
+/* ---------------- som de venda (app aberto) ---------------- */
+let _ac = null;
+function audioCtx() { try { if (!_ac) { const AC = window.AudioContext || window.webkitAudioContext; if (AC) _ac = new AC(); } return _ac; } catch (e) { return null; } }
+function destravarSom() { const ac = audioCtx(); if (ac && ac.state !== 'running') ac.resume().catch(() => {}); }
+['touchend', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, destravarSom, { passive: true }));
+// "cha-ching" de caixa registradora, feito aqui mesmo (estalo + sino + moedas)
+function somVenda() {
+  const ac = audioCtx(); if (!ac) return false;
+  if (ac.state !== 'running') ac.resume().catch(() => {});
+  const t0 = ac.currentTime + 0.03, out = ac.createGain(); out.gain.value = 0.9; out.connect(ac.destination);
+  const len = Math.floor(ac.sampleRate * 0.07), buf = ac.createBuffer(1, len, ac.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2);
+  const ns = ac.createBufferSource(); ns.buffer = buf;
+  const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2600; bp.Q.value = 0.9;
+  const gn = ac.createGain(); gn.gain.setValueAtTime(0.7, t0); gn.gain.exponentialRampToValueAtTime(0.001, t0 + 0.08);
+  ns.connect(bp); bp.connect(gn); gn.connect(out); ns.start(t0);
+  const sino = (f, ini, vol, dur) => [[1, 1], [2.76, 0.5], [5.4, 0.25], [8.9, 0.12]].forEach(([m, a]) => {
+    const o = ac.createOscillator(), g = ac.createGain(); o.type = 'sine'; o.frequency.value = f * m;
+    g.gain.setValueAtTime(0.0001, t0 + ini); g.gain.exponentialRampToValueAtTime(vol * a, t0 + ini + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + ini + dur / Math.pow(m, 0.3));
+    o.connect(g); g.connect(out); o.start(t0 + ini); o.stop(t0 + ini + dur + 0.1);
+  });
+  sino(2093, 0.09, 0.32, 1.1); sino(2637, 0.2, 0.28, 1.3);
+  [0.5, 0.58, 0.69, 0.75, 0.88].forEach((ini, i) => sino(3520 + i * 310, ini, 0.07, 0.25));
+  return true;
+}
+// Chamado depois de cada busca: se entrou venda nova hoje, toca.
+function checarVendaNova() {
+  const hoje = hojeISO(), r = linhaDe(hoje), n = r ? (r.vendas || 0) : 0;
+  const ant = S.vendasVistas;
+  S.vendasVistas = { dia: hoje, n };
+  if (ant && ant.dia === hoje && n > ant.n && S.somOn && document.visibilityState === 'visible') somVenda();
+}
+
 /* ---------------- ações ---------------- */
 document.addEventListener('click', async e => {
   const t = e.target.closest('[data-tab],[data-per],[data-act],#btnSync,#btnOlho'); if (!t) return;
@@ -688,6 +727,8 @@ document.addEventListener('click', async e => {
     S._mesmaTela = true; render();
   }
   if (act === 'push') ativarPush();
+  if (act === 'somTestar') { destravarSom(); toast(somVenda() ? 'Tocando… (sem som? veja se o iPhone está no silencioso)' : 'Este aparelho não toca som aqui'); }
+  if (act === 'somToggle') { S.somOn = !S.somOn; ls.set('belor_som', S.somOn); if (S.somOn) { destravarSom(); somVenda(); } S._mesmaTela = true; render(); toast(S.somOn ? 'Som de venda ligado' : 'Som de venda desligado'); }
 });
 document.addEventListener('toggle', e => { const d = e.target; if (d.matches && d.matches('details.tipbox')) S.abertos['d_' + d.dataset.id] = d.open; }, true);
 
