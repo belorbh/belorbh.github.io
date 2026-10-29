@@ -10,7 +10,7 @@
 const API_PADRAO = 'https://script.google.com/macros/s/AKfycbwp29On9-npjl4QyiiJ_Q9g6tIKjmwTbdtq05uGk4D06_VR12A6xAeZpVHZRnH8UVGN/exec';
 const BOLETIM_URL = 'https://claude.ai/artifact/ToAKhvVxycLAc4N1jP56du';
 const TZ = 'America/Sao_Paulo';
-const VERSAO = '1.4.0';
+const VERSAO = '1.4.1';
 const METAS_PADRAO = {
   meta_mes: 100000,     // faturamento do mês (R$)
   ticket: 200,          // ticket médio alvo (R$)
@@ -424,6 +424,9 @@ function telaHoje() {
   const vendE = Object.entries(r.vend || {}), totV = vendE.reduce((s, e) => s + (e[1] || 0), 0);
   let corI = 0; const corVend = vendE.map(([n]) => /^outros$/i.test(n) ? 'var(--ghost)' : ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)'][Math.min(3, corI++)]);
   const comp = (a, b) => { if (a == null || b == null || !b) return ''; const dlt = (a - b) / b; return `<span class="${dlt >= 0 ? 'up' : 'down'}">${dlt >= 0 ? '▲' : '▼'} ${pct(Math.abs(dlt))}</span> vs ${ddmm(ontemISO)}`; };
+  // voltaram hoje = vendas com cadastro menos cadastros novos de hoje (Cliente Padrão nunca entra)
+  const cliH0 = (S.data.clientes || []).find(c => c.data === hoje);
+  const voltaramHoje = semcad != null && v && cliH0 && cliH0.novos != null ? Math.max(0, (v - semcad) - cliH0.novos) : 0;
   let h = alertaLeitor();
   h += `<div class="card hero fade-in"><div class="hero-l">${aberta ? 'Vendido hoje · ' + DSEML[dowOf(hoje)] + ', ' + ddmm(hoje) : 'Loja fechada hoje (' + DSEML[dowOf(hoje)] + ')'}</div>
     <div class="hero-v num"><small>R$</small>${OCULTO() ? MASK : nf2.format(fat)}</div>
@@ -436,7 +439,7 @@ function telaHoje() {
     <div class="tile"><div class="tile-l">Vendas</div><div class="tile-v num">${qtd(v)}</div><div class="tile-d">${o ? comp(v, o.vendas) : 'últimos 7 dias'}</div>${spark(ult7v)}</div>
     <div class="tile"><div class="tile-l">Ticket médio</div><div class="tile-v num">${ticket ? brl0(ticket) : '—'}</div><div class="tile-d">meta ${brl0(M.ticket)}</div>${spark(ult7t.slice(-7))}</div>
     <div class="tile"><div class="tile-l">Peças por cliente</div><div class="tile-v num">${pa ? dec1(pa) : '—'}</div><div class="tile-d">meta ${dec1(M.pa)}${r.pecas != null ? ` · ${qtd(r.pecas)} peças` : ''}</div></div>
-    <div class="tile"><div class="tile-l">Cadastros</div><div class="tile-v num">${semcad != null && v ? qtd(v - semcad) + '<small> de ' + qtd(v) + '</small>' : '—'}</div><div class="tile-d">${semcadPct != null ? `<span class="${(1 - semcadPct) >= M.cadastro ? 'up' : 'down'}">${pct(1 - semcadPct)}</span> das vendas com cadastro` : 'sem vendas ainda'}</div></div>
+    <div class="tile"><div class="tile-l">Cadastros</div><div class="tile-v num">${semcad != null && v ? qtd(v - semcad) + (voltaramHoje > 0 ? '<b class="up" style="font-size:.6em;margin-left:4px">+' + qtd(voltaramHoje) + '</b>' : '') + '<small> de ' + qtd(v) + '</small>' : '—'}</div><div class="tile-d">${semcadPct != null ? `<span class="${(1 - semcadPct) >= M.cadastro ? 'up' : 'down'}">${pct(1 - semcadPct)}</span> das vendas com cadastro${voltaramHoje > 0 ? ` · <span class="up">+${qtd(voltaramHoje)} ${voltaramHoje === 1 ? 'voltou' : 'voltaram'}</span>` : ''}` : 'sem vendas ainda'}</div></div>
   </div>`;
   const cliHoje = (S.data.clientes || []).find(c => c.data === hoje);
   if (cliHoje && cliHoje.novos > 0) h += `<div class="card"><div class="card-h"><div class="card-t">Clientes novos hoje</div><div class="card-a">${qtd(cliHoje.novos)} ${cliHoje.novos === 1 ? 'cadastrado' : 'cadastrados'}</div></div>${origemBars(cliHoje.origens) || '<div class="hint">De onde vieram: ainda lendo na Phibo.</div>'}</div>`;
