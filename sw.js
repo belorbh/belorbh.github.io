@@ -1,5 +1,5 @@
 /* Belor — service worker: app offline + notificações (Web Push) */
-const VERSAO = 'belor-1.2.0';
+const VERSAO = 'belor-1.3.0';
 const BASE = new URL('./', self.location).pathname;
 const SHELL = ['./', 'index.html', 'app.css', 'app.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png',

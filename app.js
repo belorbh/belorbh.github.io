@@ -10,7 +10,7 @@
 const API_PADRAO = 'https://script.google.com/macros/s/AKfycbwp29On9-npjl4QyiiJ_Q9g6tIKjmwTbdtq05uGk4D06_VR12A6xAeZpVHZRnH8UVGN/exec';
 const BOLETIM_URL = 'https://claude.ai/artifact/ToAKhvVxycLAc4N1jP56du';
 const TZ = 'America/Sao_Paulo';
-const VERSAO = '1.2.0';
+const VERSAO = '1.3.0';
 const METAS_PADRAO = {
   meta_mes: 100000,     // faturamento do mês (R$)
   ticket: 200,          // ticket médio alvo (R$)
@@ -118,7 +118,8 @@ function normalizar(j) {
     instagram: (j.instagram || []).map(a => ({ data: String(a.data).slice(0, 10), saldo: num(a.saldo), alcance: num(a.alcance), total: num(a.total) })),
     clientes: (j.clientes || []).map(r => {
       let o = {}; try { o = JSON.parse(r.cad_origens || '{}') || {}; } catch (e) { o = {}; }
-      return { data: String(r.data).slice(0, 10), novos: num(r.cad_novos), origens: o, voltaram: num(r.voltaram_mes), compraram: num(r.compraram_mes), base: num(r.base_total), vendasMes: num(r.vendas_mes), semCadMes: num(r.sem_cad_mes) };
+      return { data: String(r.data).slice(0, 10), novos: num(r.cad_novos), origens: o, voltaram: num(r.voltaram_mes), compraram: num(r.compraram_mes), base: num(r.base_total), vendasMes: num(r.vendas_mes), semCadMes: num(r.sem_cad_mes),
+        ltv: num(r.ltv), ltvCli: num(r.ltv_clientes), ltvValor: num(r.ltv_valor), ltvVendas: num(r.ltv_vendas), ltvTicketSem: num(r.ltv_ticket_sem), ltvRecompra: num(r.ltv_recompra), ltvTop10: num(r.ltv_top10) };
     }).filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.data)).sort((a, b) => a.data < b.data ? -1 : 1),
     push: j.push || null,
     diagnostico: j.diagnostico || null,
@@ -494,6 +495,26 @@ function telaClientes() {
       <div class="hero-s">de <b>${qtd(snap.compraram)}</b> que compraram no mês${pv != null ? ` · <b>${pct(pv)}</b>` : ''}${dif ? ` · <span class="${dif > 0 ? 'up' : 'down'}">${dif > 0 ? '▲ +' : '▼ '}${qtd(dif)}</span> desde ${ddmm(ant.data)}` : ''}</div>
       ${serie.length > 1 ? `<div class="sparkbox">${spark(serie)}</div>` : ''}
       <div class="hint">Voltou = cliente cadastrado que comprou de novo em outro dia. Base total: ${snap.base != null ? qtd(snap.base) : '—'} clientes cadastrados.</div></div>`;
+  }
+  // 2b) LTV: quanto um cliente cadastrado já gastou na loja, em média
+  const lv = cli.filter(r => r.ltv != null && r.ltvCli), L = lv[lv.length - 1];
+  if (L) {
+    const freq = L.ltvVendas && L.ltvCli ? L.ltvVendas / L.ltvCli : null, tkt = L.ltvVendas ? L.ltvValor / L.ltvVendas : null;
+    const d2 = v => v == null ? '—' : OCULTO() ? '••' : v.toFixed(2).replace('.', ',');
+    const vsSem = tkt != null && L.ltvTicketSem ? tkt / L.ltvTicketSem - 1 : null;
+    const n10 = Math.max(1, Math.ceil(L.ltvCli * 0.1)), seVoltar = tkt != null && freq != null ? tkt * (freq + 1) : null;
+    const ser = lv.map(r => r.ltv), antL = lv.length > 1 ? lv[lv.length - 2] : null, difL = antL ? L.ltv - antL.ltv : null;
+    h += `<div class="card"><div class="card-h"><div class="card-t">LTV · quanto vale um cliente</div><div class="card-a">desde o início</div></div>
+      <div class="hero-v num" style="font-size:44px">${brl0(L.ltv)}<small> por cliente</small></div>
+      <div class="hero-s">É o que cada cliente cadastrado já gastou na loja, em média · <b>${qtd(L.ltvCli)}</b> clientes, <b>${brlK(L.ltvValor)}</b> no total${difL ? ` · <span class="${difL > 0 ? 'up' : 'down'}">${difL > 0 ? '▲ +' : '▼ '}${brl0(Math.abs(difL))}</span> desde ${ddmm(antL.data)}` : ''}</div>
+      ${ser.length > 1 ? `<div class="sparkbox">${spark(ser)}</div>` : ''}
+      <div class="row"><span>Ticket médio do cliente cadastrado</span><span class="num">${brl0(tkt)}</span></div>
+      <div class="row"><span>× compras por cliente</span><span class="num">${d2(freq)}</span></div>
+      <div class="row"><span>= LTV</span><span class="num"><b>${brl0(L.ltv)}</b></span></div>
+      ${L.ltvTicketSem ? `<div class="row"><span>Ticket sem cadastro</span><span class="num">${brl0(L.ltvTicketSem)}${vsSem != null ? ` <i style="font-style:normal;color:var(--muted)">(cadastrado ${vsSem >= 0 ? '+' : ''}${pct(vsSem)})</i>` : ''}</span></div>` : ''}
+      ${L.ltvRecompra != null ? `<div class="row"><span>Compraram 2 vezes ou mais</span><span class="num">${qtd(L.ltvRecompra)} <i style="font-style:normal;color:var(--muted)">(${pct(L.ltvRecompra / L.ltvCli)})</i></span></div>` : ''}
+      ${L.ltvTop10 ? `<div class="row"><span>Top 10% (${qtd(n10)} clientes)</span><span class="num">${brlK(L.ltvTop10)} <i style="font-style:normal;color:var(--muted)">(${pct(L.ltvTop10 / L.ltvValor)} do total)</i></span></div>` : ''}
+      ${seVoltar ? `<div class="hint">Alavanca: se cada cliente voltar <b>mais 1 vez</b>, o LTV vai para cerca de <b>${brl0(seVoltar)}</b>. Venda sem cadastro não entra na conta, porque esse cliente não dá pra chamar de volta.</div>` : ''}</div>`;
   }
   // 3) de onde vêm
   const oMes = somaOrigens(doMes), tot = Object.values(oMes).reduce((t, v) => t + v, 0);
