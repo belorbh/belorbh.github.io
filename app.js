@@ -10,7 +10,7 @@
 const API_PADRAO = 'https://script.google.com/macros/s/AKfycbwp29On9-npjl4QyiiJ_Q9g6tIKjmwTbdtq05uGk4D06_VR12A6xAeZpVHZRnH8UVGN/exec';
 const BOLETIM_URL = 'https://claude.ai/artifact/ToAKhvVxycLAc4N1jP56du';
 const TZ = 'America/Sao_Paulo';
-const VERSAO = '1.3.0';
+const VERSAO = '1.4.0';
 const METAS_PADRAO = {
   meta_mes: 100000,     // faturamento do mês (R$)
   ticket: 200,          // ticket médio alvo (R$)
@@ -37,6 +37,8 @@ const S = {
   data: ls.get('belor_cache', null),
   tab: qs.get('tab') || ls.get('belor_tab', 'hoje'),
   periodo: ls.get('belor_periodo', 'mes'),
+  funilTipo: ls.get('belor_ftipo', 'geral'),
+  funilOrient: ls.get('belor_forient', 'h'),
   metasLocais: ls.get('belor_metas', {}),
   oculto: ls.get('belor_oculto', false),
   somOn: ls.get('belor_som', true),
@@ -101,7 +103,7 @@ const durTxt = m => m == null ? '' : m < 60 ? `${m} min` : `${Math.floor(m / 60)
 function normalizar(j) {
   const linhas = (j.vendas || j.linhas || []).map(r => {
     const o = { data: String(r.data).slice(0, 10) };
-    for (const k of ['faturamento','vendas','pecas','ticket','pa','sem_cad_vendas','sem_cad_valor','descontos','pix','dinheiro','credito','debito','outras_formas','mes_faturamento','mes_vendas']) o[k] = num(r[k]);
+    for (const k of ['faturamento','vendas','pecas','ticket','pa','sem_cad_vendas','sem_cad_valor','descontos','pix','dinheiro','credito','debito','outras_formas','mes_faturamento','mes_vendas','online_vendas','online_valor','entradas']) o[k] = num(r[k]);
     o.detalhe = r.detalhe === 'completo';
     o.vend = {};
     if (r.vend && typeof r.vend === 'object') for (const nome in r.vend) { const v = num(r.vend[nome]); if (v != null) o.vend[nome] = v; }
@@ -115,12 +117,13 @@ function normalizar(j) {
     boletim: j.boletim || null,
     boletins: j.boletins || [],
     anuncios: (j.anuncios || []).map(a => ({ data: String(a.data).slice(0, 10), gasto: num(a.gasto), seguidores: num(a.seguidores), visitas: num(a.visitas), conversas: num(a.conversas), cliques: num(a.cliques), impressoes: num(a.impressoes) })),
-    instagram: (j.instagram || []).map(a => ({ data: String(a.data).slice(0, 10), saldo: num(a.saldo), alcance: num(a.alcance), total: num(a.total) })),
+    instagram: (j.instagram || []).map(a => ({ data: String(a.data).slice(0, 10), saldo: num(a.saldo), ganhos: num(a.ganhos), alcance: num(a.alcance), total: num(a.total) })),
     clientes: (j.clientes || []).map(r => {
       let o = {}; try { o = JSON.parse(r.cad_origens || '{}') || {}; } catch (e) { o = {}; }
       return { data: String(r.data).slice(0, 10), novos: num(r.cad_novos), origens: o, voltaram: num(r.voltaram_mes), compraram: num(r.compraram_mes), base: num(r.base_total), vendasMes: num(r.vendas_mes), semCadMes: num(r.sem_cad_mes),
         ltv: num(r.ltv), ltvCli: num(r.ltv_clientes), ltvValor: num(r.ltv_valor), ltvVendas: num(r.ltv_vendas), ltvTicketSem: num(r.ltv_ticket_sem), ltvRecompra: num(r.ltv_recompra), ltvTop10: num(r.ltv_top10) };
     }).filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.data)).sort((a, b) => a.data < b.data ? -1 : 1),
+    organico: (j.organico || []).map(r => ({ data: String(r.data).slice(0, 10), igViews: num(r.ig_views), igInter: num(r.ig_interacoes), igCont: num(r.ig_conteudos), igStories: num(r.ig_stories), igAlcance: num(r.ig_alcance), igGanhos: num(r.ig_ganhos), igPerdidos: num(r.ig_perdidos), igTotal: num(r.ig_total), ttViews: num(r.tt_views), ttInter: num(r.tt_interacoes), ttVideos: num(r.tt_videos), ttPerfil: num(r.tt_perfil), ttTotal: num(r.tt_total) })).filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.data)).sort((a, b) => a.data < b.data ? -1 : 1),
     push: j.push || null,
     diagnostico: j.diagnostico || null,
     fatos: (j.textos && j.textos.fatos) || {},
@@ -361,6 +364,7 @@ function ligarTips() {
 const IC = {
   hoje: '<svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>',
   mes: '<svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/></svg>',
+  funil: '<svg viewBox="0 0 24 24"><path d="M3 4h18l-7 8.5V19l-4 2v-8.5z"/></svg>',
   clientes: '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5M16 4.8a3.5 3.5 0 0 1 0 6.4M18 14.8c1.9.7 3.2 2.4 3.5 5.2"/></svg>',
   micro: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20.5 20.5-4.8-4.8M8.5 11h5M11 8.5v5"/></svg>',
   boletim: '<svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/></svg>',
@@ -530,6 +534,245 @@ function telaClientes() {
     h += `<div class="card"><div class="card-h"><div class="card-t">Cadastros novos por dia</div><div class="card-a">últimos 14 dias</div></div>${barras(it, { h: 140, aria: 'Cadastros novos por dia' })}</div>`;
   }
   if (!cli.length) h += `<div class="card"><div class="hint">Os números de clientes aparecem aqui assim que o leitor da loja for atualizado (versão 2.1). Os de cadastro das vendas já vêm da Phibo.</div></div>`;
+  return h;
+}
+
+/* ---------------- funil (Geral / Tráfego pago / Orgânico) ---------------- */
+const FUNIL_TIPOS = [['geral', 'Geral'], ['pago', 'Tráfego pago'], ['organico', 'Orgânico']];
+let funilSeq = 0;
+
+// Período atual e o anterior do mesmo tamanho (pra comparar)
+function janelaFunil(per, hoje) {
+  const { y, m, d } = ymd(hoje);
+  if (per === 'hoje') return { ini: hoje, fim: hoje, iniA: addDias(hoje, -1), fimA: addDias(hoje, -1), nome: 'hoje', nomeA: 'ontem' };
+  if (per === '7d') return { ini: addDias(hoje, -6), fim: hoje, iniA: addDias(hoje, -13), fimA: addDias(hoje, -7), nome: 'últimos 7 dias', nomeA: '7 dias antes' };
+  const pm = m === 1 ? 12 : m - 1, py = m === 1 ? y - 1 : y;
+  return { ini: isoDe(y, m, 1), fim: hoje, iniA: isoDe(py, pm, 1), fimA: isoDe(py, pm, Math.min(d, diasNoMes(py, pm))), nome: MES[m - 1], nomeA: MES[pm - 1] };
+}
+
+// Soma tudo que o funil usa num intervalo de datas. null = sem dado (diferente de zero).
+function somaFunil(ini, fim) {
+  const D = S.data || {}, den = r => r.data >= ini && r.data <= fim;
+  const dias = {};
+  const soma = (arr, f, k) => { let t = 0, n = 0; arr.forEach(r => { const v = num(f(r)); if (v != null) { t += v; n++; } }); if (k) dias[k] = n; return n ? t : null; };
+  const ads = (D.anuncios || []).filter(den), org = (D.organico || []).filter(den);
+  const ven = (D.vendas || []).filter(den), cli = (D.clientes || []).filter(den);
+  const o = {};
+  o.imp = soma(ads, r => r.impressoes, 'ads'); o.cliques = soma(ads, r => r.cliques); o.visitas = soma(ads, r => r.visitas);
+  o.segAds = soma(ads, r => r.seguidores); o.gasto = soma(ads, r => r.gasto, 'gasto');
+  o.igViews = soma(org, r => r.igViews, 'igViews'); o.ttViews = soma(org, r => r.ttViews, 'ttViews');
+  o.igInter = soma(org, r => r.igInter, 'igInter'); o.ttInter = soma(org, r => r.ttInter);
+  o.igCont = soma(org, r => r.igCont, 'igCont'); o.ttVideos = soma(org, r => r.ttVideos, 'ttVideos'); o.ttPerfil = soma(org, r => r.ttPerfil, 'ttPerfil');
+  o.igGanhos = soma(org, r => r.igGanhos, 'igGanhos'); o.igPerdidos = soma(org, r => r.igPerdidos);
+  // seguidores dos anúncios só nos dias em que o Instagram já informou os ganhos (pra separar pago de orgânico)
+  const diasIg = new Set(org.filter(r => r.igGanhos != null).map(r => r.data));
+  o.segAdsDiasIg = soma(ads.filter(r => diasIg.has(r.data)), r => r.seguidores);
+  // totais de seguidores no fim e crescimento do TikTok (o total vem salteado)
+  const tudoOrg = (D.organico || []);
+  const ultimo = (k, ate) => { let x = null; tudoOrg.forEach(r => { if (r.data <= ate && r[k] != null) x = r[k]; }); return x; };
+  const antes = k => { let x = null; tudoOrg.forEach(r => { if (r.data < ini && r[k] != null) x = r[k]; }); return x; };
+  const primeiro = k => { const r = org.find(z => z[k] != null); return r ? r[k] : null; };
+  o.igTotal = ultimo('igTotal', fim); o.ttTotal = ultimo('ttTotal', fim);
+  const ttA = antes('ttTotal') != null ? antes('ttTotal') : primeiro('ttTotal'), ttB = org.filter(r => r.ttTotal != null).map(r => r.ttTotal).pop();
+  o.ttCresc = ttA != null && ttB != null ? Math.max(0, ttB - ttA) : null;
+  o.vendas = soma(ven, r => r.vendas, 'vendas'); o.fat = soma(ven, r => r.faturamento, 'fat');
+  o.online = soma(ven, r => r.online_vendas); o.entradas = soma(ven, r => r.entradas);
+  const det = ven.filter(r => r.detalhe && r.vendas != null && r.sem_cad_vendas != null);
+  o.semcadDet = soma(det, r => r.sem_cad_vendas); o.vendasDet = soma(det, r => r.vendas);
+  const snaps = cli.filter(r => r.voltaram != null); o.snap = snaps[snaps.length - 1] || null;
+  o.novos = soma(cli, r => r.novos, 'novos'); o.origens = somaOrigens(cli);
+  o.dias = dias;
+  return o;
+}
+
+// Monta as etapas de cada funil
+function etapasFunil(tipo, a, per) {
+  const M = metas(), og = a.origens || {}, nIg = og.Instagram || 0, nTk = og.TikTok || 0;
+  // clientes que disseram "Instagram": divididos entre anúncio e orgânico pela proporção de seguidores que cada um trouxe
+  const share = a.igGanhos ? Math.min(1, Math.max(0, (a.segAdsDiasIg || 0) / a.igGanhos)) : (a.segAds ? 0.5 : 0);
+  const cliPago = Math.round(nIg * share), cliOrg = nTk + (nIg - cliPago);
+  const add = (...v) => v.some(x => x != null) ? v.reduce((t, x) => t + (x || 0), 0) : null;
+  const temClientes = (S.data.clientes || []).length > 0;
+  if (tipo === 'pago') return [
+    { nome: 'Impressões', curto: 'Impressões', sub: 'anúncios da loja', v: a.imp },
+    { nome: 'Cliques', curto: 'Cliques', sub: 'no anúncio', v: a.cliques, meta: 0.02, metaNome: 'CTR' },
+    { nome: 'Visitas', curto: 'Visitas', sub: 'no perfil', v: a.visitas, meta: 0.70 },
+    { nome: 'Seguidores', curto: 'Seguiram', sub: 'pelos anúncios', v: a.segAds, meta: 0.12 },
+    { nome: 'Clientes', curto: 'Clientes', sub: 'estimado', v: temClientes && a.imp != null ? cliPago : null, falta: 'sem dado de clientes' },
+  ];
+  if (tipo === 'organico') return [
+    { nome: 'Visualizações', curto: 'Views', sub: 'posts e vídeos', v: add(a.igViews, a.ttViews) },
+    { nome: 'Interações', curto: 'Interações', sub: 'curtiu, comentou…', v: add(a.igInter, a.ttInter), meta: 0.02 },
+    { nome: 'Seguidores', curto: 'Seguiram', sub: 'sem anúncios', v: a.igGanhos != null || a.ttCresc != null ? Math.max(0, (a.igGanhos || 0) - (a.segAdsDiasIg || 0)) + (a.ttCresc || 0) : null },
+    { nome: 'Clientes', curto: 'Clientes', sub: 'estimado', v: temClientes ? cliOrg : null, falta: 'sem dado de clientes' },
+  ];
+  const s = a.snap, mesSnap = per === 'mes';
+  const comCad = mesSnap && s && s.vendasMes && s.semCadMes != null ? s.vendasMes - s.semCadMes
+    : a.vendasDet ? Math.round((a.vendas || 0) * (1 - a.semcadDet / a.vendasDet)) : null;
+  return [
+    { nome: 'Visualizações', curto: 'Views', sub: 'pago + orgânico', v: add(a.imp, a.igViews, a.ttViews) },
+    { nome: 'Seguidores', curto: 'Seguiram', sub: 'Instagram + TikTok', v: add(a.igGanhos, a.ttCresc) },
+    { nome: 'Na loja', curto: 'Na loja', sub: 'câmera da porta', v: a.entradas, falta: 'aguardando câmera' },
+    { nome: 'Vendas', curto: 'Vendas', sub: a.online ? `${qtd(a.vendas - a.online)} loja · ${qtd(a.online)} online` : 'loja + online', v: a.vendas, meta: a.entradas != null ? 0.25 : null },
+    { nome: 'Com cadastro', curto: 'Cadastro', sub: 'dá pra chamar', v: comCad, meta: M.cadastro },
+    { nome: 'Voltaram', curto: 'Voltaram', sub: 'no mês', v: s ? s.voltaram : null, taxaFixa: s && s.compraram ? s.voltaram / s.compraram : null, meta: 0.20, falta: 'chega com o leitor' },
+  ];
+}
+
+// Taxa de passagem de cada etapa (da anterior que tem dado) e o status contra a meta
+function taxasFunil(E) {
+  let ant = null;
+  E.forEach((e, i) => {
+    if (e.v != null && ant && ant.v) {
+      e.pulou = i - E.indexOf(ant) > 1; e.de = ant.nome;
+      e.taxa = e.taxaFixa != null ? e.taxaFixa : e.pulou ? null : e.v / ant.v;
+      e.st = e.meta != null && e.taxa != null ? status(e.taxa, e.meta, 'up') : 'info';
+    }
+    if (e.v != null) ant = e;
+  });
+  const ruins = E.filter(e => e.st === 'bad' || e.st === 'warn').sort((x, y) => x.taxa / x.meta - y.taxa / y.meta);
+  return ruins[0] || null;
+}
+
+const nCompacto = v => v == null ? '—' : OCULTO() ? '••' : v >= 1e6 ? nf1.format(v / 1e6) + ' mi' : v >= 1e4 ? nf0.format(v / 1e3) + ' mil' : v >= 1e3 ? nf1.format(v / 1e3) + ' mil' : nf0.format(v);
+const pctF = v => v == null ? '—' : pct(v, v < 0.1 ? 1 : 0);
+
+// A fita: largura de cada etapa em escala log (as etapas vão de milhões a dezenas), curvas suaves entre elas
+function fitaSVG(E, orient, pior) {
+  const id = 'fn' + (++funilSeq), N = E.length, vert = orient !== 'h';
+  const conhecidos = E.map(e => e.v).filter(v => v != null && v > 0);
+  const lmax = Math.log10(1 + Math.max(1, ...conhecidos)), lmin = Math.log10(1 + Math.min(...(conhecidos.length ? conhecidos : [1])));
+  let t = E.map(e => e.v != null && e.v > 0 ? (lmax === lmin ? 1 : (Math.log10(1 + e.v) - lmin) / (lmax - lmin)) : null);
+  t = t.map((x, i) => {
+    if (x != null) return x;
+    let a = null, b = null;
+    for (let j = i - 1; j >= 0; j--) if (t[j] != null) { a = t[j]; break; }
+    for (let j = i + 1; j < N; j++) if (t[j] != null) { b = t[j]; break; }
+    return a != null && b != null ? (a + b) / 2 : a != null ? a * 0.8 : b != null ? b : 0.5;
+  });
+  const W = 340, f2 = n => Math.round(n * 10) / 10;
+  let s = '';
+  if (vert) {
+    const rowH = 66, pad = 4, H = pad * 2 + N * rowH, cx = 176, hMin = 22, hMax = 66;
+    const hw = t.map(x => hMin + (hMax - hMin) * x), yc = E.map((_, i) => pad + rowH * (i + 0.5)), k = rowH * 0.5;
+    let L = `M${f2(cx - hw[0])},${pad} L${f2(cx - hw[0])},${f2(yc[0])}`, R = '';
+    for (let i = 1; i < N; i++) L += ` C${f2(cx - hw[i - 1])},${f2(yc[i - 1] + k)} ${f2(cx - hw[i])},${f2(yc[i] - k)} ${f2(cx - hw[i])},${f2(yc[i])}`;
+    L += ` L${f2(cx - hw[N - 1])},${H - pad} L${f2(cx + hw[N - 1])},${H - pad} L${f2(cx + hw[N - 1])},${f2(yc[N - 1])}`;
+    for (let i = N - 1; i > 0; i--) R += ` C${f2(cx + hw[i])},${f2(yc[i] - k)} ${f2(cx + hw[i - 1])},${f2(yc[i - 1] + k)} ${f2(cx + hw[i - 1])},${f2(yc[i - 1])}`;
+    const d = L + R + ` L${f2(cx + hw[0])},${pad} Z`;
+    s += `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Funil: ${esc(E.map(e => e.nome + ' ' + (e.v == null ? 'sem dado' : e.v)).join(', '))}">
+      <defs><linearGradient id="${id}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4b3df0"/><stop offset=".5" stop-color="#8b3fe0"/><stop offset="1" stop-color="#e2467f"/></linearGradient>
+      <linearGradient id="${id}s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".30"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+      <pattern id="${id}h" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#12162b" fill-opacity=".55"/><line x1="0" y1="0" x2="0" y2="8" stroke="#fff" stroke-opacity=".22" stroke-width="3"/></pattern>
+      <clipPath id="${id}c"><path d="${d}"/></clipPath></defs>`;
+    for (let i = 1; i < N; i++) s += `<line class="fn-sep" x1="0" x2="${W}" y1="${pad + rowH * i}" y2="${pad + rowH * i}"/>`;
+    s += `<path d="${d}" fill="url(#${id}g)"/>`;
+    s += `<g clip-path="url(#${id}c)">`;
+    E.forEach((e, i) => { if (e.v == null) s += `<rect x="0" y="${pad + rowH * i}" width="${W}" height="${rowH}" fill="url(#${id}h)"/>`; });
+    s += `<rect class="fn-shine fn-shine-v" x="0" y="-120" width="${W}" height="120" fill="url(#${id}s)"/></g>`;
+    E.forEach((e, i) => {
+      const y = yc[i];
+      s += `<text class="fn-lbl" x="2" y="${f2(y - 3)}">${esc(e.nome)}</text><text class="fn-sub" x="2" y="${f2(y + 13)}">${esc(e.sub || '')}</text>`;
+      const p = e.v == null ? '—' : i === 0 ? '100%' : e.taxa != null ? pctF(e.taxa) : '';
+      s += `<text class="fn-pct" x="${cx}" y="${f2(y + 4.5)}" text-anchor="middle">${p}</text>`;
+      if (e.v == null) s += `<text class="fn-falta" x="${W - 2}" y="${f2(y + 4)}" text-anchor="end">${esc(e.falta || 'sem dado')}</text>`;
+      else {
+        s += `<text class="fn-num" x="${W - 2}" y="${f2(y + 1)}" text-anchor="end">${OCULTO() ? '••' : nf0.format(e.v)}</text>`;
+        if (i && e.meta != null && e.taxa != null) s += `<text class="fn-meta fn-${e.st}" x="${W - 2}" y="${f2(y + 16)}" text-anchor="end">${e.st === 'good' ? '▲' : '▼'} meta ${pctF(e.meta)}</text>`;
+      }
+      if (pior && e === pior) s += `<circle class="fn-pulse" cx="${f2(cx + hw[i] + 9)}" cy="${f2(y)}" r="5" fill="#f87171"/><circle cx="${f2(cx + hw[i] + 9)}" cy="${f2(y)}" r="3.5" fill="#f87171"/>`;
+    });
+    return s + `</svg>`;
+  }
+  // horizontal (como a inspiração)
+  const H = 236, cy = 116, hMin = 13, hMax = 64, cw = W / N;
+  const hh = t.map(x => hMin + (hMax - hMin) * x), xc = E.map((_, i) => cw * (i + 0.5)), k = cw * 0.5;
+  let T = `M0,${f2(cy - hh[0])} L${f2(xc[0])},${f2(cy - hh[0])}`, B = '';
+  for (let i = 1; i < N; i++) T += ` C${f2(xc[i - 1] + k)},${f2(cy - hh[i - 1])} ${f2(xc[i] - k)},${f2(cy - hh[i])} ${f2(xc[i])},${f2(cy - hh[i])}`;
+  T += ` L${W},${f2(cy - hh[N - 1])} L${W},${f2(cy + hh[N - 1])} L${f2(xc[N - 1])},${f2(cy + hh[N - 1])}`;
+  for (let i = N - 1; i > 0; i--) B += ` C${f2(xc[i] - k)},${f2(cy + hh[i])} ${f2(xc[i - 1] + k)},${f2(cy + hh[i - 1])} ${f2(xc[i - 1])},${f2(cy + hh[i - 1])}`;
+  const d = T + B + ` L0,${f2(cy + hh[0])} Z`;
+  s += `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Funil: ${esc(E.map(e => e.nome + ' ' + (e.v == null ? 'sem dado' : e.v)).join(', '))}">
+    <defs><linearGradient id="${id}g" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4b3df0"/><stop offset=".5" stop-color="#8b3fe0"/><stop offset="1" stop-color="#e2467f"/></linearGradient>
+    <linearGradient id="${id}s" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".30"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <pattern id="${id}h" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#12162b" fill-opacity=".55"/><line x1="0" y1="0" x2="0" y2="8" stroke="#fff" stroke-opacity=".22" stroke-width="3"/></pattern>
+    <clipPath id="${id}c"><path d="${d}"/></clipPath></defs>`;
+  for (let i = 1; i < N; i++) s += `<line class="fn-sep" x1="${f2(cw * i)}" x2="${f2(cw * i)}" y1="36" y2="196"/>`;
+  s += `<path d="${d}" fill="url(#${id}g)"/><g clip-path="url(#${id}c)">`;
+  E.forEach((e, i) => { if (e.v == null) s += `<rect x="${f2(cw * i)}" y="0" width="${f2(cw)}" height="${H}" fill="url(#${id}h)"/>`; });
+  s += `<rect class="fn-shine fn-shine-h" x="-120" y="0" width="120" height="${H}" fill="url(#${id}s)"/></g>`;
+  E.forEach((e, i) => {
+    const x = xc[i];
+    s += `<text class="fn-lbl fn-sm" x="${f2(x)}" y="18" text-anchor="middle">${esc(e.curto || e.nome)}</text>`;
+    const p = e.v == null ? '—' : i === 0 ? '100%' : e.taxa != null ? pctF(e.taxa) : '';
+    s += `<text class="fn-pct" x="${f2(x)}" y="${cy + 4.5}" text-anchor="middle">${p}</text>`;
+    if (e.v == null) s += `<text class="fn-falta fn-xs" x="${f2(x)}" y="214" text-anchor="middle">sem dado</text>`;
+    else {
+      s += `<text class="fn-num fn-sm" x="${f2(x)}" y="214" text-anchor="middle">${nCompacto(e.v)}</text>`;
+      if (i && e.meta != null && e.taxa != null) s += `<text class="fn-meta fn-xs fn-${e.st}" x="${f2(x)}" y="230" text-anchor="middle">${e.st === 'good' ? '▲' : '▼'} meta ${pctF(e.meta)}</text>`;
+    }
+    if (pior && e === pior) s += `<circle class="fn-pulse" cx="${f2(x)}" cy="${f2(cy - hh[i] - 9)}" r="5" fill="#f87171"/><circle cx="${f2(x)}" cy="${f2(cy - hh[i] - 9)}" r="3.5" fill="#f87171"/>`;
+  });
+  return s + `</svg>`;
+}
+
+// Números do período (estilo painel de anúncios), com comparação ao período anterior
+function tilesFunil(tipo, a, b) {
+  const div = (x, y) => x != null && y ? x / y : null;
+  const add = (...v) => v.some(x => x != null) ? v.reduce((t, x) => t + (x || 0), 0) : null;
+  const og = x => (x.origens || {});
+  const T = tipo === 'pago' ? [
+    { cob: ['gasto'], n: 'Investimento', f: x => x.gasto, fmt: brlK, dir: 'neutro' },
+    { cob: ['ads'], n: 'CPM', f: x => div(x.gasto, x.imp) != null ? div(x.gasto, x.imp) * 1000 : null, fmt: brl, dir: 'down' },
+    { cob: ['ads'], n: 'CPC', f: x => div(x.gasto, x.cliques), fmt: brl, dir: 'down' },
+    { cob: ['ads'], n: 'CTR', f: x => div(x.cliques, x.imp), fmt: v => pct(v, 1), dir: 'up' },
+    { cob: ['ads'], n: 'Custo/seguidor', f: x => div(x.gasto, x.segAds), fmt: brl, dir: 'down' },
+    { cob: ['ads'], n: 'Custo/visita', f: x => div(x.gasto, x.visitas), fmt: brl, dir: 'down' },
+  ] : tipo === 'organico' ? [
+    { cob: ['igCont','ttVideos'], n: 'Conteúdos', f: x => add(x.igCont, x.ttVideos), fmt: qtd, dir: 'up' },
+    { cob: ['igViews','ttViews'], n: 'Views/post', f: x => div(add(x.igViews, x.ttViews), add(x.igCont, x.ttVideos)), fmt: v => nCompacto(v == null ? null : Math.round(v)), dir: 'up' },
+    { cob: ['igInter','igViews'], n: 'Engajamento', f: x => div(add(x.igInter, x.ttInter), add(x.igViews, x.ttViews)), fmt: v => pct(v, 1), dir: 'up' },
+    { cob: ['ttPerfil'], n: 'Perfil TikTok', f: x => x.ttPerfil, fmt: qtd, dir: 'up', sub: 'visitas' },
+    { n: 'Instagram', f: x => x.igTotal, fmt: nCompacto, dir: 'up', sub: 'seguidores', semDelta: true },
+    { n: 'TikTok', f: x => x.ttTotal, fmt: nCompacto, dir: 'up', sub: 'seguidores', semDelta: true },
+  ] : [
+    { cob: ['fat'], n: 'Faturamento', f: x => x.fat, fmt: brlK, dir: 'up' },
+    { cob: ['vendas'], n: 'Ticket médio', f: x => div(x.fat, x.vendas), fmt: brl0, dir: 'up' },
+    { cob: ['novos'], n: 'Clientes novos', f: x => x.novos, fmt: qtd, dir: 'up' },
+    { cob: ['gasto'], n: 'Investido', f: x => x.gasto, fmt: brlK, dir: 'neutro', sub: 'anúncios' },
+    { cob: ['gasto','fat'], n: 'Venda por R$ 1', f: x => div(x.fat, x.gasto), fmt: v => v == null ? '—' : OCULTO() ? '••' : 'R$ ' + nf0.format(v), dir: 'up', sub: 'por R$ 1 em anúncio' },
+    { cob: ['igCont','ttVideos'], n: 'Conteúdos', f: x => add(x.igCont, x.ttVideos), fmt: qtd, dir: 'up', sub: 'publicados' },
+  ];
+  return `<div class="ktiles">${T.map(t => {
+    const cobre = !t.cob || t.cob.every(k => (b.dias[k] || 0) >= 0.7 * (a.dias[k] || 0));
+    const v = t.f(a), w = t.f(b), dl = !t.semDelta && cobre && v != null && w ? v / w - 1 : null;
+    const bom = dl == null || t.dir === 'neutro' ? '' : (t.dir === 'up' ? dl >= 0 : dl <= 0) ? 'up' : 'down';
+    return `<div class="kt"><div class="kt-l">${esc(t.n)}</div><div class="kt-v num">${t.fmt(v)}</div><div class="kt-d">${dl != null && isFinite(dl) ? `<span class="${bom}">${dl >= 0 ? '▲' : '▼'} ${pct(Math.abs(dl), Math.abs(dl) < 0.1 ? 1 : 0)}</span>` : t.sub ? esc(t.sub) : '&nbsp;'}</div></div>`;
+  }).join('')}</div>`;
+}
+
+function telaFunil() {
+  const hoje = hojeISO(), tipo = S.funilTipo || 'geral', J = janelaFunil(S.periodo, hoje);
+  // anúncios e redes chegam com o boletim da manhã: compara períodos do mesmo tamanho até o último dia com dado
+  const D = S.data || {}, fonte = tipo === 'pago' ? (D.anuncios || []) : (D.organico || []), ultimoDado = fonte.map(r => r.data).filter(x => x <= hoje).sort().pop();
+  const fimRedes = tipo !== 'geral' && ultimoDado && ultimoDado < J.fim && ultimoDado >= J.ini ? ultimoDado : J.fim;
+  const dias = Math.round((Date.parse(fimRedes) - Date.parse(J.ini)) / 864e5);
+  const a = somaFunil(J.ini, fimRedes), b = somaFunil(J.iniA, tipo !== 'geral' ? addDias(J.iniA, dias) : J.fimA);
+  const E = etapasFunil(tipo, a, S.periodo), pior = taxasFunil(E), orient = S.funilOrient || 'h';
+  const titulo = { geral: 'Funil geral', pago: 'Tráfego pago · Meta Ads', organico: 'Orgânico · Instagram + TikTok' }[tipo];
+  let h = `<div class="seg" role="group" aria-label="Funil">${FUNIL_TIPOS.map(([k, t]) => `<button data-act="ftipo" data-v="${k}" aria-pressed="${tipo === k}">${t}</button>`).join('')}</div>`;
+  h += `<div class="seg" role="group" aria-label="Período">${[['hoje', 'Hoje'], ['7d', '7 dias'], ['mes', 'Mês']].map(([k, t]) => `<button data-per="${k}" aria-pressed="${S.periodo === k}">${t}</button>`).join('')}</div>`;
+  h += `<div class="fpanel fade-in"><div class="fpanel-h"><div><div class="fpanel-t">${titulo}</div><div class="fpanel-a">${cap(J.nome)}${fimRedes !== J.fim ? ' · até ' + ddmm(fimRedes) : ''}</div></div>
+    <button class="fpanel-b" data-act="forient" aria-label="Girar o funil">${orient === 'h' ? '↕' : '↔'}</button></div>
+    ${fitaSVG(E, orient, pior)}`;
+  const falta = E.filter(e => e.v == null);
+  if (pior) h += `<div class="fpanel-ins"><span class="fn-dot"></span><div><div class="fi-l">Onde está perdendo mais</div><div class="fi-v">${esc(pior.de)} → ${esc(pior.nome)} <span>${pctF(pior.taxa)} · meta ${pctF(pior.meta)}</span></div></div></div>`;
+  else if (E.some(e => e.st === 'good')) h += `<div class="fpanel-ins ok">Todas as passagens com meta estão no verde.</div>`;
+  if (falta.length) h += `<div class="fpanel-ins dim">Sem dado ainda: ${falta.map(e => esc(e.nome) + ' (' + esc(e.falta || 'sem dado') + ')').join(' · ')}</div>`;
+  if (S.periodo === 'hoje' && tipo !== 'geral') h += `<div class="fpanel-ins dim">Anúncios e redes chegam com o boletim da manhã. Veja 7 dias ou Mês.</div>`;
+  if (tipo !== 'geral') h += `<div class="fpanel-ins dim">Clientes: quem respondeu "Instagram" no cadastro, dividido entre anúncio e orgânico pela proporção de seguidores que cada um trouxe.</div>`;
+  h += `</div>`;
+  h += `<div class="card"><div class="card-h"><div class="card-t">Números do período</div><div class="card-a">vs ${esc(J.nomeA)}</div></div>${tilesFunil(tipo, a, b)}</div>`;
   return h;
 }
 
@@ -705,6 +948,9 @@ function telaAjustes() {
       <button class="btn" data-act="salvarMetas">Salvar metas</button></div>`;
   return `${cartaoMeta}
     <div class="card"><div class="card-h"><div class="card-t">Notificações</div></div>${notif}
+      ${push && push.vapid ? `<div class="row mt12"><span>Total do dia na notificação de venda</span><span>${d.config && d.config.push_total ? chip('good').replace('Bom', 'Ligado') : chip('na').replace('Sem dado', 'Desligado')}</span></div>
+      <button class="btn ghost mt8" data-act="pushTotal">${d.config && d.config.push_total ? 'Tirar o total do dia' : 'Mostrar o total do dia'}</button>
+      <div class="hint">Desligado: chega só "Venda aprovada! Valor: R$ X – Pix", bom pra postar nos stories. A meta do dia batida sempre avisa com o total.</div>` : ''}
       <div class="row mt12"><span>Som de venda (app aberto)</span><span>${S.somOn ? chip('good').replace('Bom', 'Ligado') : chip('na').replace('Sem dado', 'Desligado')}</span></div>
       <div class="btns"><button class="btn ghost mt8" data-act="somTestar">Testar som</button><button class="btn ghost mt8" data-act="somToggle">${S.somOn ? 'Desligar' : 'Ligar'} som</button></div>
       <div class="hint">Toca o "cha-ching" quando o app está aberto e entra uma venda. Com o app fechado, o iPhone usa o som padrão da notificação (o iOS não deixa trocar).</div></div>
@@ -723,7 +969,7 @@ function telaPin(erro) {
 }
 
 /* ---------------- render ---------------- */
-const TABS = [['hoje', 'Hoje'], ['mes', 'Mês'], ['clientes', 'Clientes'], ['micro', 'Microdados'], ['boletim', 'Boletim'], ['ajustes', 'Ajustes']];
+const TABS = [['hoje', 'Hoje'], ['mes', 'Mês'], ['funil', 'Funil'], ['clientes', 'Clientes'], ['micro', 'Micro'], ['boletim', 'Boletim'], ['ajustes', 'Ajustes']];
 function render() {
   const app = $('#app');
   if (!S.pin) { app.innerHTML = telaPin(); return; }
@@ -732,8 +978,8 @@ function render() {
     return;
   }
   chartSeq = 0; for (const k in TIPS) delete TIPS[k];
-  const corpo = { hoje: telaHoje, mes: telaMes, clientes: telaClientes, micro: telaMicro, boletim: telaBoletim, ajustes: telaAjustes }[S.tab] || telaHoje;
-  const titulos = { hoje: ['Hoje', ''], mes: ['Mês', ''], clientes: ['Clientes', 'Cadastro, retorno e de onde eles vêm'], micro: ['Microdados', 'Cada número da loja com a meta dele'], boletim: ['Boletim', ''], ajustes: ['Ajustes', ''] };
+  const corpo = { hoje: telaHoje, mes: telaMes, funil: telaFunil, clientes: telaClientes, micro: telaMicro, boletim: telaBoletim, ajustes: telaAjustes }[S.tab] || telaHoje;
+  const titulos = { hoje: ['Hoje', ''], mes: ['Mês', ''], funil: ['Funil de vendas', 'Da distribuição até o cliente voltar'], clientes: ['Clientes', 'Cadastro, retorno e de onde eles vêm'], micro: ['Microdados', 'Cada número da loja com a meta dele'], boletim: ['Boletim', ''], ajustes: ['Ajustes', ''] };
   const nRuins = (() => { try { return microdados(contexto('mes')).filter(x => x.st === 'bad').length; } catch (e) { return 0; } })();
   const y0 = window.scrollY;
   app.innerHTML = `<div class="shell">${topo()}
@@ -790,6 +1036,14 @@ document.addEventListener('click', async e => {
   if (t.dataset.per) { S.periodo = t.dataset.per; ls.set('belor_periodo', S.periodo); S._mesmaTela = true; render(); return; }
   if (t.id === 'btnSync') { await buscar(S.pin); S._mesmaTela = true; render(); toast(S.erro ? 'Não deu pra atualizar agora' : 'Atualizado'); return; }
   const act = t.dataset.act;
+  if (act === 'ftipo') { S.funilTipo = t.dataset.v; ls.set('belor_ftipo', S.funilTipo); S._mesmaTela = true; render(); return; }
+  if (act === 'forient') { S.funilOrient = S.funilOrient === 'h' ? 'v' : 'h'; ls.set('belor_forient', S.funilOrient); S._mesmaTela = true; render(); return; }
+  if (act === 'pushTotal') {
+    const novo = !(S.data && S.data.config && S.data.config.push_total);
+    t.disabled = true;
+    try { const r = await postar({ acao: 'config', config: { push_total: novo } }); if (r && r.ok) { await buscar(S.pin, true); toast(novo ? 'Notificação com o total do dia' : 'Notificação só com valor e forma de pagamento'); } else toast('Não deu pra salvar agora'); } catch (err) { toast('Sem conexão'); }
+    S._mesmaTela = true; render(); return;
+  }
   if (act === 'entrar') {
     const pin = ($('#fPin').value || '').trim(); if (!pin) return;
     t.disabled = true; t.textContent = 'Entrando…';
