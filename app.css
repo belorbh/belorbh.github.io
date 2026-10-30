@@ -342,5 +342,7 @@ details.tipbox .tb b{color:var(--text)}
 .ktiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px}
 .kt{background:var(--surface-2);border:1px solid var(--line);border-radius:14px;padding:10px 10px 9px;min-width:0}
 .kt-l{font-size:10px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;color:var(--muted);line-height:1.2;min-height:24px;display:flex;align-items:flex-end}
-.kt-v{font-size:16px;font-weight:800;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kt-v{font-size:15px;letter-spacing:-.02em;font-weight:800;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .kt-d{font-size:10.5px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seg-tit{grid-template-columns:auto;grid-auto-columns:1fr}
+.seg-l{align-self:center;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:0 8px 0 6px}

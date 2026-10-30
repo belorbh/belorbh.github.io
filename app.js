@@ -10,7 +10,7 @@
 const API_PADRAO = 'https://script.google.com/macros/s/AKfycbwp29On9-npjl4QyiiJ_Q9g6tIKjmwTbdtq05uGk4D06_VR12A6xAeZpVHZRnH8UVGN/exec';
 const BOLETIM_URL = 'https://claude.ai/artifact/ToAKhvVxycLAc4N1jP56du';
 const TZ = 'America/Sao_Paulo';
-const VERSAO = '1.4.1';
+const VERSAO = '1.5.0';
 const METAS_PADRAO = {
   meta_mes: 100000,     // faturamento do mês (R$)
   ticket: 200,          // ticket médio alvo (R$)
@@ -424,9 +424,6 @@ function telaHoje() {
   const vendE = Object.entries(r.vend || {}), totV = vendE.reduce((s, e) => s + (e[1] || 0), 0);
   let corI = 0; const corVend = vendE.map(([n]) => /^outros$/i.test(n) ? 'var(--ghost)' : ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)'][Math.min(3, corI++)]);
   const comp = (a, b) => { if (a == null || b == null || !b) return ''; const dlt = (a - b) / b; return `<span class="${dlt >= 0 ? 'up' : 'down'}">${dlt >= 0 ? '▲' : '▼'} ${pct(Math.abs(dlt))}</span> vs ${ddmm(ontemISO)}`; };
-  // voltaram hoje = vendas com cadastro menos cadastros novos de hoje (Cliente Padrão nunca entra)
-  const cliH0 = (S.data.clientes || []).find(c => c.data === hoje);
-  const voltaramHoje = semcad != null && v && cliH0 && cliH0.novos != null ? Math.max(0, (v - semcad) - cliH0.novos) : 0;
   let h = alertaLeitor();
   h += `<div class="card hero fade-in"><div class="hero-l">${aberta ? 'Vendido hoje · ' + DSEML[dowOf(hoje)] + ', ' + ddmm(hoje) : 'Loja fechada hoje (' + DSEML[dowOf(hoje)] + ')'}</div>
     <div class="hero-v num"><small>R$</small>${OCULTO() ? MASK : nf2.format(fat)}</div>
@@ -439,7 +436,7 @@ function telaHoje() {
     <div class="tile"><div class="tile-l">Vendas</div><div class="tile-v num">${qtd(v)}</div><div class="tile-d">${o ? comp(v, o.vendas) : 'últimos 7 dias'}</div>${spark(ult7v)}</div>
     <div class="tile"><div class="tile-l">Ticket médio</div><div class="tile-v num">${ticket ? brl0(ticket) : '—'}</div><div class="tile-d">meta ${brl0(M.ticket)}</div>${spark(ult7t.slice(-7))}</div>
     <div class="tile"><div class="tile-l">Peças por cliente</div><div class="tile-v num">${pa ? dec1(pa) : '—'}</div><div class="tile-d">meta ${dec1(M.pa)}${r.pecas != null ? ` · ${qtd(r.pecas)} peças` : ''}</div></div>
-    <div class="tile"><div class="tile-l">Cadastros</div><div class="tile-v num">${semcad != null && v ? qtd(v - semcad) + (voltaramHoje > 0 ? '<b class="up" style="font-size:.6em;margin-left:4px">+' + qtd(voltaramHoje) + '</b>' : '') + '<small> de ' + qtd(v) + '</small>' : '—'}</div><div class="tile-d">${semcadPct != null ? `<span class="${(1 - semcadPct) >= M.cadastro ? 'up' : 'down'}">${pct(1 - semcadPct)}</span> das vendas com cadastro${voltaramHoje > 0 ? ` · <span class="up">+${qtd(voltaramHoje)} ${voltaramHoje === 1 ? 'voltou' : 'voltaram'}</span>` : ''}` : 'sem vendas ainda'}</div></div>
+    <div class="tile"><div class="tile-l">Cadastros</div><div class="tile-v num">${semcad != null && v ? qtd(v - semcad) + '<small> de ' + qtd(v) + '</small>' : '—'}</div><div class="tile-d">${semcadPct != null ? `<span class="${(1 - semcadPct) >= M.cadastro ? 'up' : 'down'}">${pct(1 - semcadPct)}</span> das vendas com cadastro` : 'sem vendas ainda'}</div></div>
   </div>`;
   const cliHoje = (S.data.clientes || []).find(c => c.data === hoje);
   if (cliHoje && cliHoje.novos > 0) h += `<div class="card"><div class="card-h"><div class="card-t">Clientes novos hoje</div><div class="card-a">${qtd(cliHoje.novos)} ${cliHoje.novos === 1 ? 'cadastrado' : 'cadastrados'}</div></div>${origemBars(cliHoje.origens) || '<div class="hint">De onde vieram: ainda lendo na Phibo.</div>'}</div>`;
@@ -541,7 +538,9 @@ function telaClientes() {
 }
 
 /* ---------------- funil (Geral / Tráfego pago / Orgânico) ---------------- */
-const FUNIL_TIPOS = [['geral', 'Geral'], ['pago', 'Tráfego pago'], ['organico', 'Orgânico']];
+const FUNIL_TIPOS = [['geral', 'Geral'], ['pago', 'Pago'], ['organico', 'Orgânico']];
+const FUNIL_VENDAS = [['loja', 'Loja física'], ['online', 'Online']];
+const ehVenda = t => t === 'loja' || t === 'online';
 let funilSeq = 0;
 
 // Período atual e o anterior do mesmo tamanho (pra comparar)
@@ -579,13 +578,28 @@ function somaFunil(ini, fim) {
   const ttA = antes('ttTotal') != null ? antes('ttTotal') : primeiro('ttTotal'), ttB = org.filter(r => r.ttTotal != null).map(r => r.ttTotal).pop();
   o.ttCresc = ttA != null && ttB != null ? Math.max(0, ttB - ttA) : null;
   o.vendas = soma(ven, r => r.vendas, 'vendas'); o.fat = soma(ven, r => r.faturamento, 'fat');
-  o.online = soma(ven, r => r.online_vendas); o.entradas = soma(ven, r => r.entradas);
+  o.online = soma(ven, r => r.online_vendas, 'online'); o.onlineValor = soma(ven, r => r.online_valor); o.entradas = soma(ven, r => r.entradas);
+  const comP = ven.filter(r => r.pecas != null && r.vendas); o.pecas = soma(comP, r => r.pecas, 'pecas'); o.vendasP = soma(comP, r => r.vendas);
   const det = ven.filter(r => r.detalhe && r.vendas != null && r.sem_cad_vendas != null);
   o.semcadDet = soma(det, r => r.sem_cad_vendas); o.vendasDet = soma(det, r => r.vendas);
   const snaps = cli.filter(r => r.voltaram != null); o.snap = snaps[snaps.length - 1] || null;
   o.novos = soma(cli, r => r.novos, 'novos'); o.origens = somaOrigens(cli);
   o.dias = dias;
   return o;
+}
+
+// Clientes que disseram "Instagram": divididos entre anúncio e orgânico pela proporção de seguidores que cada um trouxe
+function clientesEst(a) {
+  const og = a.origens || {}, nIg = og.Instagram || 0, nTk = og.TikTok || 0;
+  const share = a.igGanhos ? Math.min(1, Math.max(0, (a.segAdsDiasIg || 0) / a.igGanhos)) : (a.segAds ? 0.5 : 0);
+  const pago = Math.round(nIg * share);
+  return { pago, org: nTk + (nIg - pago) };
+}
+// % das vendas com cadastro no período (painel do mês quando dá; senão os dias com detalhe)
+function pCadFunil(a, per) {
+  const s = a.snap;
+  if (per === 'mes' && s && s.vendasMes && s.semCadMes != null) return 1 - s.semCadMes / s.vendasMes;
+  return a.vendasDet ? 1 - a.semcadDet / a.vendasDet : null;
 }
 
 // Monta as etapas de cada funil
@@ -609,6 +623,22 @@ function etapasFunil(tipo, a, per) {
     { nome: 'Seguidores', curto: 'Seguiram', sub: 'sem anúncios', v: a.igGanhos != null || a.ttCresc != null ? Math.max(0, (a.igGanhos || 0) - (a.segAdsDiasIg || 0)) + (a.ttCresc || 0) : null },
     { nome: 'Clientes', curto: 'Clientes', sub: 'estimado', v: temClientes ? cliOrg : null, falta: 'sem dado de clientes' },
   ];
+  if (tipo === 'loja' || tipo === 'online') {
+    const pc = pCadFunil(a, per), s2 = a.snap, vOn = a.online, vLoja = a.vendas != null ? a.vendas - (vOn || 0) : null;
+    const volta = { nome: 'Voltaram', curto: 'Voltaram', sub: 'loja + online · mês', v: s2 ? s2.voltaram : null, taxaFixa: s2 && s2.compraram ? s2.voltaram / s2.compraram : null, meta: 0.20, falta: 'chega com o leitor' };
+    if (tipo === 'loja') return [
+      { nome: 'Entraram', curto: 'Entraram', sub: 'câmera da porta', v: a.entradas, falta: 'aguardando câmera' },
+      { nome: 'Vendas', curto: 'Vendas', sub: 'no balcão', v: vLoja, meta: a.entradas != null ? 0.25 : null },
+      { nome: 'Com cadastro', curto: 'Cadastro', sub: 'dá pra chamar', v: vLoja != null && pc != null ? Math.round(vLoja * pc) : null, meta: M.cadastro },
+      volta,
+    ];
+    return [
+      { nome: 'Visitas', curto: 'Visitas', sub: 'perfil IG (anúncio) + TikTok', v: (a.visitas != null || a.ttPerfil != null) ? (a.visitas || 0) + (a.ttPerfil || 0) : null },
+      { nome: 'Conversas', curto: 'Conversas', sub: 'WhatsApp e Direct', v: null, falta: 'precisa de sistema no WhatsApp' },
+      { nome: 'Vendas online', curto: 'Vendas', sub: 'com frete', v: vOn, falta: 'chega com o leitor 2.3' },
+      { nome: 'Com cadastro', curto: 'Cadastro', sub: 'estimado', v: vOn != null && pc != null ? Math.round(vOn * pc) : null, meta: M.cadastro, falta: 'chega com o leitor 2.3' },
+    ];
+  }
   const s = a.snap, mesSnap = per === 'mes';
   const comCad = mesSnap && s && s.vendasMes && s.semCadMes != null ? s.vendasMes - s.semCadMes
     : a.vendasDet ? Math.round((a.vendas || 0) * (1 - a.semcadDet / a.vendasDet)) : null;
@@ -720,17 +750,36 @@ function fitaSVG(E, orient, pior) {
 }
 
 // Números do período (estilo painel de anúncios), com comparação ao período anterior
+const brlMil = v => v == null ? '—' : OCULTO() ? 'R$ ' + MASK : Math.abs(v) >= 1e4 ? 'R$ ' + nf0.format(v / 1e3) + ' mil' : brl0(v);
+function ltvAtual() { const l = ((S.data && S.data.clientes) || []).filter(r => r.ltv != null && r.ltvCli); return l.length ? l[l.length - 1].ltv : null; }
 function tilesFunil(tipo, a, b) {
   const div = (x, y) => x != null && y ? x / y : null;
   const add = (...v) => v.some(x => x != null) ? v.reduce((t, x) => t + (x || 0), 0) : null;
   const og = x => (x.origens || {});
   const T = tipo === 'pago' ? [
-    { cob: ['gasto'], n: 'Investimento', f: x => x.gasto, fmt: brlK, dir: 'neutro' },
+    { cob: ['gasto'], n: 'Investimento', f: x => x.gasto, fmt: brlMil, dir: 'neutro' },
     { cob: ['ads'], n: 'CPM', f: x => div(x.gasto, x.imp) != null ? div(x.gasto, x.imp) * 1000 : null, fmt: brl, dir: 'down' },
     { cob: ['ads'], n: 'CPC', f: x => div(x.gasto, x.cliques), fmt: brl, dir: 'down' },
     { cob: ['ads'], n: 'CTR', f: x => div(x.cliques, x.imp), fmt: v => pct(v, 1), dir: 'up' },
     { cob: ['ads'], n: 'Custo/seguidor', f: x => div(x.gasto, x.segAds), fmt: brl, dir: 'down' },
     { cob: ['ads'], n: 'Custo/visita', f: x => div(x.gasto, x.visitas), fmt: brl, dir: 'down' },
+    { cob: ['ads', 'novos'], n: 'CAC', f: x => div(x.gasto, clientesEst(x).pago), fmt: brl0, dir: 'down', sub: 'estimado' },
+    { cob: ['ads', 'novos'], n: 'Clientes', f: x => (x.origens && (x.origens.Instagram || x.origens.TikTok)) ? clientesEst(x).pago : null, fmt: qtd, dir: 'up', sub: 'estimado' },
+    { cob: ['ads'], n: 'Seguidores', f: x => x.segAds, fmt: qtd, dir: 'up', sub: 'pelos anúncios' },
+  ] : tipo === 'loja' ? [
+    { cob: ['fat'], n: 'Faturamento', f: x => x.fat != null ? x.fat - (x.onlineValor || 0) : null, fmt: brlMil, dir: 'up' },
+    { cob: ['vendas'], n: 'Vendas', f: x => x.vendas != null ? x.vendas - (x.online || 0) : null, fmt: qtd, dir: 'up' },
+    { cob: ['vendas'], n: 'Ticket médio', f: x => div(x.fat != null ? x.fat - (x.onlineValor || 0) : null, x.vendas != null ? x.vendas - (x.online || 0) : null), fmt: brl0, dir: 'up' },
+    { cob: ['pecas'], n: 'Peças/venda', f: x => div(x.pecas, x.vendasP), fmt: dec1, dir: 'up' },
+    { n: 'Com cadastro', f: x => x._pc, fmt: v => pct(v), dir: 'up', semDelta: true, sub: 'meta 90%' },
+    { cob: ['gasto', 'novos'], n: 'CAC', f: x => div(x.gasto, x.novos), fmt: brl0, dir: 'down', sub: 'por cliente' },
+  ] : tipo === 'online' ? [
+    { cob: ['online'], n: 'Vendas online', f: x => x.online, fmt: qtd, dir: 'up', sub: 'com frete' },
+    { cob: ['online'], n: 'Faturamento', f: x => x.onlineValor, fmt: brlMil, dir: 'up', sub: 'online' },
+    { cob: ['online'], n: 'Ticket online', f: x => div(x.onlineValor, x.online), fmt: brl0, dir: 'up' },
+    { cob: ['online', 'fat'], n: '% do total', f: x => div(x.onlineValor, x.fat), fmt: v => pct(v, 1), dir: 'up', sub: 'do faturamento' },
+    { cob: ['ads'], n: 'Visitas perfil', f: x => x.visitas, fmt: qtd, dir: 'up', sub: 'anúncios' },
+    { cob: ['gasto', 'novos'], n: 'CAC', f: x => div(x.gasto, x.novos), fmt: brl0, dir: 'down', sub: 'por cliente' },
   ] : tipo === 'organico' ? [
     { cob: ['igCont','ttVideos'], n: 'Conteúdos', f: x => add(x.igCont, x.ttVideos), fmt: qtd, dir: 'up' },
     { cob: ['igViews','ttViews'], n: 'Views/post', f: x => div(add(x.igViews, x.ttViews), add(x.igCont, x.ttVideos)), fmt: v => nCompacto(v == null ? null : Math.round(v)), dir: 'up' },
@@ -739,12 +788,15 @@ function tilesFunil(tipo, a, b) {
     { n: 'Instagram', f: x => x.igTotal, fmt: nCompacto, dir: 'up', sub: 'seguidores', semDelta: true },
     { n: 'TikTok', f: x => x.ttTotal, fmt: nCompacto, dir: 'up', sub: 'seguidores', semDelta: true },
   ] : [
-    { cob: ['fat'], n: 'Faturamento', f: x => x.fat, fmt: brlK, dir: 'up' },
+    { cob: ['fat'], n: 'Faturamento', f: x => x.fat, fmt: brlMil, dir: 'up' },
     { cob: ['vendas'], n: 'Ticket médio', f: x => div(x.fat, x.vendas), fmt: brl0, dir: 'up' },
     { cob: ['novos'], n: 'Clientes novos', f: x => x.novos, fmt: qtd, dir: 'up' },
-    { cob: ['gasto'], n: 'Investido', f: x => x.gasto, fmt: brlK, dir: 'neutro', sub: 'anúncios' },
+    { cob: ['gasto'], n: 'Investido', f: x => x.gasto, fmt: brlMil, dir: 'neutro', sub: 'anúncios' },
     { cob: ['gasto','fat'], n: 'Venda por R$ 1', f: x => div(x.fat, x.gasto), fmt: v => v == null ? '—' : OCULTO() ? '••' : 'R$ ' + nf0.format(v), dir: 'up', sub: 'por R$ 1 em anúncio' },
     { cob: ['igCont','ttVideos'], n: 'Conteúdos', f: x => add(x.igCont, x.ttVideos), fmt: qtd, dir: 'up', sub: 'publicados' },
+    { cob: ['gasto', 'novos'], n: 'CAC', f: x => div(x.gasto, x.novos), fmt: brl0, dir: 'down', sub: 'por cliente' },
+    { n: 'LTV', f: () => ltvAtual(), fmt: brl0, dir: 'up', semDelta: true, sub: 'por cliente' },
+    { n: 'LTV ÷ CAC', f: x => div(ltvAtual(), div(x.gasto, x.novos)), fmt: v => v == null ? '—' : OCULTO() ? '••' : nf1.format(v) + 'x', dir: 'up', semDelta: true, sub: 'bom: acima de 3x' },
   ];
   return `<div class="ktiles">${T.map(t => {
     const cobre = !t.cob || t.cob.every(k => (b.dias[k] || 0) >= 0.7 * (a.dias[k] || 0));
@@ -758,12 +810,14 @@ function telaFunil() {
   const hoje = hojeISO(), tipo = S.funilTipo || 'geral', J = janelaFunil(S.periodo, hoje);
   // anúncios e redes chegam com o boletim da manhã: compara períodos do mesmo tamanho até o último dia com dado
   const D = S.data || {}, fonte = tipo === 'pago' ? (D.anuncios || []) : (D.organico || []), ultimoDado = fonte.map(r => r.data).filter(x => x <= hoje).sort().pop();
-  const fimRedes = tipo !== 'geral' && ultimoDado && ultimoDado < J.fim && ultimoDado >= J.ini ? ultimoDado : J.fim;
+  const fimRedes = (tipo === 'pago' || tipo === 'organico') && ultimoDado && ultimoDado < J.fim && ultimoDado >= J.ini ? ultimoDado : J.fim;
   const dias = Math.round((Date.parse(fimRedes) - Date.parse(J.ini)) / 864e5);
-  const a = somaFunil(J.ini, fimRedes), b = somaFunil(J.iniA, tipo !== 'geral' ? addDias(J.iniA, dias) : J.fimA);
+  const a = somaFunil(J.ini, fimRedes), b = somaFunil(J.iniA, (tipo === 'pago' || tipo === 'organico') ? addDias(J.iniA, dias) : J.fimA);
   const E = etapasFunil(tipo, a, S.periodo), pior = taxasFunil(E), orient = S.funilOrient || 'h';
-  const titulo = { geral: 'Funil geral', pago: 'Tráfego pago · Meta Ads', organico: 'Orgânico · Instagram + TikTok' }[tipo];
-  let h = `<div class="seg" role="group" aria-label="Funil">${FUNIL_TIPOS.map(([k, t]) => `<button data-act="ftipo" data-v="${k}" aria-pressed="${tipo === k}">${t}</button>`).join('')}</div>`;
+  a._pc = pCadFunil(a, S.periodo);
+  const titulo = { geral: 'Funil geral', pago: 'Tráfego pago · Meta Ads', organico: 'Orgânico · Instagram + TikTok', loja: 'Vendas · Loja física', online: 'Vendas · Online' }[tipo];
+  let h = `<div class="seg seg-tit" role="group" aria-label="Funil de tráfego"><span class="seg-l">Tráfego</span>${FUNIL_TIPOS.map(([k, t]) => `<button data-act="ftipo" data-v="${k}" aria-pressed="${tipo === k}">${t}</button>`).join('')}</div>`;
+  h += `<div class="seg seg-tit" role="group" aria-label="Funil de vendas"><span class="seg-l">Vendas</span>${FUNIL_VENDAS.map(([k, t]) => `<button data-act="ftipo" data-v="${k}" aria-pressed="${tipo === k}">${t}</button>`).join('')}</div>`;
   h += `<div class="seg" role="group" aria-label="Período">${[['hoje', 'Hoje'], ['7d', '7 dias'], ['mes', 'Mês']].map(([k, t]) => `<button data-per="${k}" aria-pressed="${S.periodo === k}">${t}</button>`).join('')}</div>`;
   h += `<div class="fpanel fade-in"><div class="fpanel-h"><div><div class="fpanel-t">${titulo}</div><div class="fpanel-a">${cap(J.nome)}${fimRedes !== J.fim ? ' · até ' + ddmm(fimRedes) : ''}</div></div>
     <button class="fpanel-b" data-act="forient" aria-label="Girar o funil">${orient === 'h' ? '↕' : '↔'}</button></div>
@@ -772,8 +826,9 @@ function telaFunil() {
   if (pior) h += `<div class="fpanel-ins"><span class="fn-dot"></span><div><div class="fi-l">Onde está perdendo mais</div><div class="fi-v">${esc(pior.de)} → ${esc(pior.nome)} <span>${pctF(pior.taxa)} · meta ${pctF(pior.meta)}</span></div></div></div>`;
   else if (E.some(e => e.st === 'good')) h += `<div class="fpanel-ins ok">Todas as passagens com meta estão no verde.</div>`;
   if (falta.length) h += `<div class="fpanel-ins dim">Sem dado ainda: ${falta.map(e => esc(e.nome) + ' (' + esc(e.falta || 'sem dado') + ')').join(' · ')}</div>`;
-  if (S.periodo === 'hoje' && tipo !== 'geral') h += `<div class="fpanel-ins dim">Anúncios e redes chegam com o boletim da manhã. Veja 7 dias ou Mês.</div>`;
-  if (tipo !== 'geral') h += `<div class="fpanel-ins dim">Clientes: quem respondeu "Instagram" no cadastro, dividido entre anúncio e orgânico pela proporção de seguidores que cada um trouxe.</div>`;
+  if (S.periodo === 'hoje' && (tipo === 'pago' || tipo === 'organico')) h += `<div class="fpanel-ins dim">Anúncios e redes chegam com o boletim da manhã. Veja 7 dias ou Mês.</div>`;
+  if (tipo === 'pago' || tipo === 'organico') h += `<div class="fpanel-ins dim">Clientes: quem respondeu "Instagram" no cadastro, dividido entre anúncio e orgânico pela proporção de seguidores que cada um trouxe.</div>`;
+  if (tipo === 'online') h += `<div class="fpanel-ins dim">Online = vendas com frete na Phibo. Pra separar WhatsApp e Direct, dá pra criar formas de pagamento por canal no Phibo.</div>`;
   h += `</div>`;
   h += `<div class="card"><div class="card-h"><div class="card-t">Números do período</div><div class="card-a">vs ${esc(J.nomeA)}</div></div>${tilesFunil(tipo, a, b)}</div>`;
   return h;
